@@ -20,7 +20,8 @@ def prepare_data(dataset='Cora'):
 	# Get it in right format
 	data = dataset[0]
 
-	# data = modify_train_mask(data)
+	# Update the training mask of the dataset 
+	data = modify_train_mask(data)
     # data = add_noise_features(data, args.num_noise)
 	
 	return data
@@ -29,13 +30,15 @@ def prepare_data(dataset='Cora'):
 def modify_train_mask(data):
 	"""
 	:param data: dataset downloaded above
-	:return: same dataset but different validation/test/train split
+	:return: same dataset but with extended train set mask
 	"""
-	val_mask = data.val_mask
-	test_mask = data.test_mask
-	new_train_mask = ~(val_mask + test_mask)
+	# We define the new train mask on all observations not part of the validation/test set 
+	new_train_mask = ~(data.val_mask + data.test_mask)
 	data.train_mask = new_train_mask
 
+	# Train_mask was of size 140 over 2708. val_mask was/is 500 and test_mask 1000. 
+	# New train mask is of size 1208 (1208 + 1500 = 2708)
+	
 	return data
 
 
