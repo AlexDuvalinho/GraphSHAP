@@ -7,6 +7,10 @@ import torch_geometric.transforms as T
 
 
 def prepare_data(dataset='Cora'):
+	"""
+	:param dataset: name of the dataset used
+	:return: data, in the correct format
+	"""
 	# Retrieve main path of project
 	dirname = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 	# Store path to data location 
@@ -23,31 +27,46 @@ def prepare_data(dataset='Cora'):
 
 
 def modify_train_mask(data):
-    val_mask = data.val_mask
-    test_mask = data.test_mask
-    new_train_mask = ~(val_mask + test_mask)
+	"""
+	:param data: dataset downloaded above
+	:return: same dataset but different validation/test/train split
+	"""
+	val_mask = data.val_mask
+	test_mask = data.test_mask
+	new_train_mask = ~(val_mask + test_mask)
+	data.train_mask = new_train_mask
 
-    data.train_mask = new_train_mask
-    
-    return data
+	return data
 
 
 def add_noise_features(data, num_noise):
-    if not num_noise:
-        return data
+	"""
+	:param data: downloaded dataset 
+	:param num_noise: number of noise features we want to add
+	:return: new dataset with additional noisy features
+	"""
+	# Do nothing if no noise feature to add 
+	if not num_noise: 
+		return data 
 
-    num_nodes = data.x.size(0)
+	# Number of nodes in the dataset
+	num_nodes = data.x.size(0)
 
-    noise_feat = torch.randn((num_nodes, num_noise))
-    noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
+	# Define some random features (randomly), in addition to existing ones
+	noise_feat = torch.randn((num_nodes, num_noise))
+	noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
+	data.x = torch.cat([data.x, noise_feat], dim=-1)
 
-    data.x = torch.cat([data.x, noise_feat], dim=-1)
-    
-    return data
+	return data
 
 
 def extract_test_nodes(data, num_samples):
-    test_indices = data.test_mask.cpu().numpy().nonzero()[0]
-    node_indices = np.random.choice(test_indices, num_samples).tolist()
+	"""
+	:param num_samples: 
+	:return: 
+	"""
+	test_indices = data.test_mask.cpu().numpu().nonzero()[0]
+	node_indices = np.random.choice(test_indices, num_samples).tolist()
+	
+	return node_indices
 
-    return node_indices
