@@ -22,6 +22,7 @@ def prepare_data(dataset='Cora'):
 
 	# Update the training mask of the dataset 
 	data = modify_train_mask(data)
+	print('Train mask is of size: ', data.train_mask[data.train_mask==True].shape)
     # data = add_noise_features(data, args.num_noise)
 	
 	return data
