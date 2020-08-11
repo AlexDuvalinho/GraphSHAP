@@ -18,36 +18,58 @@ class GraphSHAP():
 		:param hops: number k of k-hop neighbours to considere in the subgraph
 		:param num_samples: number of samples we want to form GraphSHAP's new dataset
 		"""
+		# Create a variable to store node features 
 		X = deepcopy(data.x)
 		x = X[node_index,:]
 
-		# k-hop-subgraph
+		# Construct k hop subgraph of node of interest (denoted v)
 		neighbours, adj, _, edge_mask =\
 			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
 												num_hops=hops, 
 												edge_index= data.edge_index)
 
-		# Get neighbours of node_index
-		D = neighbours.shape[0]
+		# Get neighbours of node v (need to exclude v)
+		neighbours = neighbours[neighbours!=node_index]
+		D = neighbours.shape[0] 
 
-	 	# Number of non-zero entries
+	 	# Number of non-zero entries for the feature vector x of node v
 		F = x[x==1].shape[0]
-		# Corresponding indexes of these entires
+		# Corresponding indexes of these entries
 		idx = torch.nonzero(x)
 
 		# Total number of features + neighbours considered for node of interest
-		M = D+F
+		M = F+D
 
-		# Sample z' - use node neighbours + use self.data.num_features
-		z_ = torch.empty(M, num_samples).random_(2)
-		s = (z_ != 0).sum(dim=0)
+		# Sample z' 
+		z_ = torch.empty(num_samples, M).random_(2)
+		# Compute |z'| for each sample z'
+		s = (z_ != 0).sum(dim=1)
 
 		# Define weights associated with each sample
 		weights = shapley_kernel(M,s)
 
-		# Create dataset from z'.
-		# Need position of each feature/neighbour included (neighbours), 
-		# contained in neighbours and in idx (need to mask maybe)
+		
+		###  Create dataset from z'.
+		# Reference sample is set to 0 everywhere since it is a categorical var.
+
+		# Define new node features dataset, where, for each new sample
+		# only the features where z_ == 1 are kept 
+		new_X = torch.zeros([num_samples,data.num_features])
+		for i in range(num_samples):
+			for j in range(F):
+				if z_[i,j].item()==1: 
+					new_X[i,idx[j].item()]=1
+		
+		# Subsample neighbors (neighbours and )
+		for i in range(num_samples):
+			for j in range(D):
+				if z_[i,F+j]==1:
+					node_id = neighbours[j].item()
+		# Need to store pair (node_index, node_id) and find a way to remove
+		# it form adjacency matrix 	(do it when computing f from stored pairs)
+
+
+
 
 
 	@ static
