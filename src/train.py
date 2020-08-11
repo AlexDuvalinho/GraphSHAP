@@ -5,7 +5,8 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+
+# from torch_geometric.data import DataLoader
 
 
 
@@ -125,14 +126,19 @@ def evaluate(model, data, mask):
 
 	return loss, acc
 
+
 def accuracy(output, labels):
 	"""
 	:param output: class predictions for each node, computed with our model
 	:param labels: true label of each node
 	Compute accuracy metric for the model
 	"""
+	# Find predicted label from predicted probabilities
 	_, pred = output.max(dim=1)
+	# Derive number of correct predicted labels
 	correct = pred.eq(labels).double()
+	# Sum over all nodes
 	correct = correct.sum()
 
+	# Return accuracy metric
 	return correct / len(labels)

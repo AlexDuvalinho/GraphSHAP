@@ -15,10 +15,12 @@ hparams = {
 model = GCN(**hparams)
 
 # Train the model
-train_error = train_and_val(model, data, num_epochs=150)
+train_error = train_and_val(model, data, num_epochs=40)
 
 # Predictions
 log_logits = model(x=data.x, edge_index=data.edge_index) # [2708, 7]
 probas = log_logits.exp()  
 
 # Evaluate the model - test set
+test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+print('Test accuracy is {:.4f}'.format(test_acc))
