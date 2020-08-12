@@ -20,6 +20,7 @@ class GraphSHAP():
 		"""
 		# Create a variable to store node features 
 		X = deepcopy(data.x)
+		A = deepcopy(data.edge_index)
 		x = X[node_index,:]
 
 		# Construct k hop subgraph of node of interest (denoted v)
@@ -60,17 +61,42 @@ class GraphSHAP():
 				if z_[i,j].item()==1: 
 					new_X[i,idx[j].item()]=1
 		
-		# Subsample neighbors (neighbours and )
+		# Subsample neighbours - store index of neighbours which need to be shut down
+		excluded_nei = {}
 		for i in range(num_samples):
+			nodes_id = []
 			for j in range(D):
-				if z_[i,F+j]==1:
+				if z_[i,F+j]==0:
 					node_id = neighbours[j].item()
-		# Need to store pair (node_index, node_id) and find a way to remove
-		# it form adjacency matrix 	(do it when computing f from stored pairs)
+					nodes_id.append(node_id)
+			excluded_nei[i] = nodes_id
+		
+		# Next, find a way to remove all edges incident to selected neighbours
+		# from edge_index = adj matrix. Want to isolate these nodes to prevent them 
+		# from influencing prediction related to node v. 
 
+		# Create new matrix A and X for each sample 
+		for key, value in excluded_nei.items():
+			if value == []:
+				continue
+			else:
+				for val in value:
+					# Retrieve column index in adjacency matrix of undesired neighbours
+					pos = (A==val).nonzero()[:,1].tolist()
+					# Create new adjacency matrix for that sample
+					A_ = np.array(A)
+					A_ = np.delete(A_, pos, axis=1)
+					A_ = torch.tensor(A_)
+					# Change feature vector for node of interest 
+					# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
+					X_ = deepcopy(X)
+					X_[node_index,:] = new_X[key,:]
 
+					# Apply GCN model with A_, X_ as input. 
+					log_logits = model(x=X_, edge_index=A_) # [2708, 7]
+					probas = log_logits.exp() 
 
-
+					# Store the results with z as (z', f(z))
 
 	@ static
 	def shapley_kernel(M, s):
