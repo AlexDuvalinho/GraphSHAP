@@ -20,7 +20,7 @@ train_error = train_and_val(model, data, num_epochs=40)
 
 # Compute predictions
 log_logits = model(x=data.x, edge_index=data.edge_index) # [2708, 7]
-probas = log_logits.exp()  
+probas = log_logits.exp()  # combine in 1 line + change accuracy
 
 # Evaluate the model - test set
 test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])

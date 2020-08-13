@@ -18,119 +18,123 @@ class GraphSHAP():
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to considere in the subgraph
 		:param num_samples: number of samples we want to form GraphSHAP's new dataset
+		:return: shapley values for features/neighbours that influence node v's pred
 		"""
 		# Create a variable to store node features 
-		X = deepcopy(self.data.x)
-		A = deepcopy(self.data.edge_index)
-		x = X[node_index,:]
-		num_classes = (max(self.data.y)+1).item() # add if Cora, use probas.shape of test.py or else
+		x = self.data.x[node_index,:]
+
+		# Store number of classes (TODO: condition on Cora or find other way to get this info)
+		num_classes = (max(self.data.y)+1).item() # if Cora, use probas.shape of test.py or else
 
 		# Construct k hop subgraph of node of interest (denoted v)
-		neighbours, adj, _, edge_mask =\
+		neighbours, _, _, _ =\
 			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
 												num_hops=hops, 
 												edge_index= self.data.edge_index)
+		# Store the indexes of the neighbours of v (+ index of v itself)
 
-		# Get neighbours of node v (need to exclude v)
+		# Remove node v index from neighbours and store their number in D
 		neighbours = neighbours[neighbours!=node_index]
 		D = neighbours.shape[0] 
 
-	 	# Number of non-zero entries for the feature vector x of node v
+	 	# Number of non-zero entries for the feature vector x_v
 		F = x[x==1].shape[0]
-		# Corresponding indexes of these entries
-		idx = torch.nonzero(x)
+		# Store indexes of these non zero feature values
+		feat_idx = torch.nonzero(x)
 
-		# Total number of features + neighbours considered for node of interest
+		# Total number of features + neighbours considered for node v
 		M = F+D
 
-		# Sample z' 
+		# Sample z' - binary vector of dimension (num_samples, M)
 		z_ = torch.empty(num_samples, M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
-		# Define weights associated with each sample
+		# Define weights associated with each sample using shapley kernel formula
 		weights = self.shapley_kernel(M,s)
 
 		
-		###  Create dataset from z'.
-		# Reference sample is set to 0 everywhere since it is a categorical var.
+		###  Create dataset (z', f(z))
 
-		# Define new node features dataset, where, for each new sample
-		# only the features where z_ == 1 are kept 
-		new_X = torch.zeros([num_samples,self.data.num_features])
+		# This implies retrieving z from z' - wrt sampled neighbours and node features
+		# We start this process here by storing new node features for v and neigbours to 
+		# isolate
+		X_v = torch.zeros([num_samples,self.data.num_features])
+		excluded_nei = {}
+
+		# Do it for each sample
 		for i in range(num_samples):
+			
+			# Define new node features dataset (we only modify x_v for now)
+			# Features where z_j == 1 are kept, others are set to 0 
 			for j in range(F):
 				if z_[i,j].item()==1: 
-					new_X[i,idx[j].item()]=1
+					X_v[i,feat_idx[j].item()]=1
 		
-		# Subsample neighbours - store index of neighbours which need to be shut down
-		excluded_nei = {}
-		for i in range(num_samples):
+			# Define new neighbourhood
+			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
 			nodes_id = []
 			for j in range(D):
 				if z_[i,F+j]==0:
 					node_id = neighbours[j].item()
 					nodes_id.append(node_id)
-			# Store in a dico with key = num_sample id, value = excluded neigh. index
+			# Dico with key = num_sample id, value = excluded neighbour index
 			excluded_nei[i] = nodes_id
 		
 		
-		# Next, find a way to remove all edges incident to selected neighbours
-		# from edge_index = adj matrix. Want to isolate these nodes to prevent them 
-		# from influencing prediction related to node v. 
+		###  Next, remove all edges incident to selected neighbours - on adj matrix
+		# Want to isolate these nodes to prevent them from influencing node v pred
 
-		
-		# Def label dataset
+		# Init label f(z) for graphshap dataset - consider all classes
 		fz = torch.zeros((num_samples, num_classes))
-		# fz = np.zeros((num_samples, num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
 
-		# Create new matrix A and X - for each sample 
+		# Create new matrix A and X - for each sample ≈ reform z from z'
 		for key, value in excluded_nei.items():
 			
-			# Distinguish (maybe) between case where all neighbours
-			if value == []: 
-				pass
-				# Need to compute predictions as well and
-				# Maybe not needed as a special case in fact
-			else:
-				positions = []
-				for val in value:
-					# Retrieve column index in adjacency matrix of undesired neighbours
-					pos = (A==val).nonzero()[:,1].tolist()
-					positions += pos
-				# Create new adjacency matrix for that sample
-				positions = list(set(positions))
-				A_ = np.array(A)
-				A_ = np.delete(A_, pos, axis=1)
-				A_ = torch.tensor(A_)
-			
+			positions = []
+			# For each excluded neighbour, retrieve the column index of each occurence 
+			# in the adj matrix - store in positions (list)
+			for val in value: 
+				pos = (self.data.edge_index==val).nonzero()[:,1].tolist()
+				positions += pos
+			# Create new adjacency matrix for that sample
+			positions = list(set(positions))
+			A = np.array(self.data.edge_index)
+			A = np.delete(A, positions, axis=1)
+			A = torch.tensor(A)
 			
 			# Change feature vector for node of interest 
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
-			X_ = deepcopy(X)
-			X_[node_index,:] = new_X[key,:]
+			X = deepcopy(self.data.x)
+			X[node_index,:] = X_v[key,:]
 
-			# Apply GCN model with A_, X_ as input. 
-			log_logits = self.model(x=X_, edge_index=A_) # [2708, 7]
-			proba = log_logits.exp()[node_index]
-			# p, class_indices = torch.topk(proba, k=1)
+			# Apply model on (X,A) as input. 
+			proba = self.model(x=X, edge_index=A).exp()[node_index] 
+			
+			# Store final class prediction and confience level
+			pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1) # optional
 			
 			# Store predicted class label in fz 
 			fz[key] = proba
+		
 			
 		# Final dataset for SHAP is stored as (z_, fz)
-
 		
-		# OLS to estimate parameter of Weighted Linear Regression
-
-		tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
-		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
+		# OLS estimator for weighted linear regression
+		phi = self.OLS(z_, weights, fz)
 		
 		print('Explanations include {} node features and {} neighbours for this node\
 		for {} classes'.format(F, D, num_classes))
 		
-		# Maybe return only explanations of the class chosen by the model 
-		# Not fz, but pred for original data - real class chosen. Can explain why.
+		# Compare with true prediction of the model - see what class should truly be explained
+		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
+
+		# Visualisation 
+		# Call visu function
 
 		return phi
 
@@ -151,3 +155,29 @@ class GraphSHAP():
 			else: 
 				shap_kernel.append((M-1)/(scipy.special.binom(M,a)*a*(M-a)))
 		return torch.tensor(shap_kernel)
+
+	def OLS(self, z_, weights, fz):
+		"""
+		:param z_: z' - binary vector  
+		:param weights: shapley kernel weights for z'
+		:param fz: f(z) where z is a new instance - formed from z' and x
+		:return: estimated coefficients of our weighted linear regression - on (z', f(z))
+		"""
+		# OLS to estimate parameter of Weighted Linear Regression
+		tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
+		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
+		return phi
+
+	def vizu(self, true_pred, phi, feat_idx, neighbours):
+		"""
+		:param true_pred: class predicted by original model for node of interest
+		:param phi: shapley values
+		:param feat_idx: index of features whose importance is assessed
+		:param neighbours: index of nodes whose importance is assessed
+		:return: nice visualisation (like SHAP) of each feature/neigbour's average
+		marginal contribution towards the prediction 
+		"""
+		# Explanation for this class - TODO: improve => print in for loop item next to influence
+		# Even do vizualisation of result like SHAPE does
+		print('Explanation for class {} are {}. They regard these features {} and these neighbours {}'\
+			.format(true_pred, phi[true_pred],feat_idx, neighbours))
