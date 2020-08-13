@@ -20,6 +20,9 @@ class GraphSHAP():
 		:param num_samples: number of samples we want to form GraphSHAP's new dataset
 		:return: shapley values for features/neighbours that influence node v's pred
 		"""
+
+		### Determine z' => features and neighbours whose importance is investigated
+
 		# Create a variable to store node features 
 		x = self.data.x[node_index,:]
 
@@ -50,12 +53,59 @@ class GraphSHAP():
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
-		# Define weights associated with each sample using shapley kernel formula
+
+		### Define weights associated with each sample using shapley kernel formula
 		weights = self.shapley_kernel(M,s)
 
-		
-		###  Create dataset (z', f(z))
 
+		###  Create dataset (z', f(z)), stored as (z_, fz)
+		# Retrive z from z' and x_v, then compute f(z)
+		fz = self.compute_pred(node_index, num_classes, num_samples, F, D, z_, neighbours, feat_idx)
+		
+
+		### OLS estimator for weighted linear regression
+		phi = self.OLS(z_, weights, fz)
+		
+
+		# Print some information
+		print('Explanations include {} node features and {} neighbours for this node\
+		for {} classes'.format(F, D, num_classes))
+		
+		# Compare with true prediction of the model - see what class should truly be explained
+		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
+
+
+		### Visualisation 
+		# Call visu function
+
+		return phi
+
+	def shapley_kernel(self, M, s):
+		"""
+		:param M: number of features + number of neighbours
+		:param s: dimension of z' (number of features + neighbours included)
+		:return: [scalar] value of shapley value 
+		"""
+		shap_kernel = []
+		# Loop around elements of s in order to specify a special case
+		# Otherwise could have procedeed with tensor s direclty
+		for i in range(s.shape[0]):
+			a = s[i].item()
+			# Put an emphasis on samples where all or none features are included
+			if a == 0 or a == M: 
+				shap_kernel.append(1000)
+			else: 
+				shap_kernel.append((M-1)/(scipy.special.binom(M,a)*a*(M-a)))
+		return torch.tensor(shap_kernel)
+
+	def compute_pred(self, node_index, num_classes, num_samples, F, D, z_, neighbours, feat_idx):
+		"""
+		Variables are exactly as defined in explainer function, where compute_pred is used
+		This function aims to construct z (from z' and x_v) and then to compute f(z), 
+		meaning the prediction of the new instances with our original model. 
+		In fact, it builds the dataset (z', f(z)), required to train the weighted linear model.
+		"""
 		# This implies retrieving z from z' - wrt sampled neighbours and node features
 		# We start this process here by storing new node features for v and neigbours to 
 		# isolate
@@ -80,10 +130,6 @@ class GraphSHAP():
 					nodes_id.append(node_id)
 			# Dico with key = num_sample id, value = excluded neighbour index
 			excluded_nei[i] = nodes_id
-		
-		
-		###  Next, remove all edges incident to selected neighbours - on adj matrix
-		# Want to isolate these nodes to prevent them from influencing node v pred
 
 		# Init label f(z) for graphshap dataset - consider all classes
 		fz = torch.zeros((num_samples, num_classes))
@@ -119,42 +165,8 @@ class GraphSHAP():
 			
 			# Store predicted class label in fz 
 			fz[key] = proba
-		
-			
-		# Final dataset for SHAP is stored as (z_, fz)
-		
-		# OLS estimator for weighted linear regression
-		phi = self.OLS(z_, weights, fz)
-		
-		print('Explanations include {} node features and {} neighbours for this node\
-		for {} classes'.format(F, D, num_classes))
-		
-		# Compare with true prediction of the model - see what class should truly be explained
-		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
-		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
 
-		# Visualisation 
-		# Call visu function
-
-		return phi
-
-	def shapley_kernel(self, M, s):
-		"""
-		:param M: number of features + number of neighbours
-		:param s: dimension of z' (number of features + neighbours included)
-		:return: [scalar] value of shapley value 
-		"""
-		shap_kernel = []
-		# Loop around elements of s in order to specify a special case
-		# Otherwise could have procedeed with tensor s direclty
-		for i in range(s.shape[0]):
-			a = s[i].item()
-			# Put an emphasis on samples where all or none features are included
-			if a == 0 or a == M: 
-				shap_kernel.append(1000)
-			else: 
-				shap_kernel.append((M-1)/(scipy.special.binom(M,a)*a*(M-a)))
-		return torch.tensor(shap_kernel)
+		return fz
 
 	def OLS(self, z_, weights, fz):
 		"""
