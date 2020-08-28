@@ -12,12 +12,13 @@ class GraphSHAP():
 		self.model = model
 		self.data = data
 		self.model.eval()
+		# Define more variables here ! (num_classes...)
 
 	def explainer(self, node_index=0, hops=1, num_samples=10):
 		"""
 		:param node_index: index of the node of interest
-		:param hops: number k of k-hop neighbours to considere in the subgraph
-		:param num_samples: number of samples we want to form GraphSHAP's new dataset
+		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
+		:param num_samples: number of samples we want to form GraphSHAP's new dataset 
 		:return: shapley values for features/neighbours that influence node v's pred
 		"""
 
@@ -105,6 +106,8 @@ class GraphSHAP():
 		This function aims to construct z (from z' and x_v) and then to compute f(z), 
 		meaning the prediction of the new instances with our original model. 
 		In fact, it builds the dataset (z', f(z)), required to train the weighted linear model.
+		:return fz: probability of belonging to each target classes, for all samples z
+		fz is of dimension N*C where N is num_samples and C num_classses. 
 		"""
 		# This implies retrieving z from z' - wrt sampled neighbours and node features
 		# We start this process here by storing new node features for v and neigbours to 

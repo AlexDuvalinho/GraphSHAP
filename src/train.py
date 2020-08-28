@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 def train(model, data, num_epochs, verbose=True):
 	"""
-	:return: trained GNN model on Cora dataset 
+	:return: training error of trained GNN model on Cora dataset
 	"""
 	optimizer = torch.optim.Adam(model.parameters(), lr= 0.05)
 
@@ -34,7 +34,7 @@ def train(model, data, num_epochs, verbose=True):
 		train_error.append(loss)
 		train_acc = accuracy(y_pred[data.train_mask], data.y[data.train_mask])
 		print('Epoch [{}/{}], Loss: {:.4f}, Acc: {:.4f}'.format(epoch+1, num_epochs, loss, train_acc))
-	return train_error
+	# return train_error
 
 
 def train_and_val(model, data, num_epochs, verbose=True):

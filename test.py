@@ -16,7 +16,7 @@ hparams = {
 model = GCN(**hparams)
 
 # Train the model
-train_error = train_and_val(model, data, num_epochs=40)
+train_and_val(model, data, num_epochs=40)
 
 # Compute predictions
 log_logits = model(x=data.x, edge_index=data.edge_index) # [2708, 7]
