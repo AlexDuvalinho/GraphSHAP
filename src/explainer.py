@@ -42,7 +42,7 @@ class GraphSHAP():
 		D = neighbours.shape[0] 
 
 	 	# Number of non-zero entries for the feature vector x_v
-		F = x[x==1].shape[0]
+		F = x[x!=0].shape[0]
 		# Store indexes of these non zero feature values
 		feat_idx = torch.nonzero(x)
 
@@ -50,6 +50,7 @@ class GraphSHAP():
 		M = F+D
 
 		# Sample z' - binary vector of dimension (num_samples, M)
+		# F node features first, then D neighbors
 		z_ = torch.empty(num_samples, M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
@@ -65,20 +66,15 @@ class GraphSHAP():
 		
 
 		### OLS estimator for weighted linear regression
-		phi = self.OLS(z_, weights, fz)
+		phi = self.OLS(z_, weights, fz) # dim (M*num_classes)
 		
 
-		# Print some information
-		print('Explanations include {} node features and {} neighbours for this node\
-		for {} classes'.format(F, D, num_classes))
-		
-		# Compare with true prediction of the model - see what class should truly be explained
-		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
-		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
-
+		### Print some information 
+		self.print_info(F, D, num_classes, node_index, phi)
 
 		### Visualisation 
 		# Call visu function
+		# Pass it true_pred
 
 		return phi
 
@@ -177,11 +173,41 @@ class GraphSHAP():
 		:param weights: shapley kernel weights for z'
 		:param fz: f(z) where z is a new instance - formed from z' and x
 		:return: estimated coefficients of our weighted linear regression - on (z', f(z))
+		phi is of dimension (M * num_classes)
 		"""
 		# OLS to estimate parameter of Weighted Linear Regression
 		tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
 		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 		return phi
+
+	def print_info(self, F, D, num_classes, node_index, phi):
+		"""
+		Displays some information about explanations - for a better comprehension and audit
+		"""
+
+		# Print some information
+		print('Explanations include {} node features and {} neighbours for this node\
+		for {} classes'.format(F, D, num_classes))
+		
+		# Compare with true prediction of the model - see what class should truly be explained
+		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
+
+		# Isolate explanations for predicted class - explain model choices
+		pred_explanation = phi[:,true_pred]
+		print('Explanation for the class predicted by the model:', pred_explanation)
+
+		# Look at repartition of weights among neighbours and node features
+		# Motivation for regularisation 
+		sum_feat = sum_nei = 0 
+		for i in range(len(pred_explanation)):
+			if i < F: 
+				sum_feat += np.abs(pred_explanation[i])
+			else: 
+				sum_nei += np.abs(pred_explanation[i])
+		print('Total weights for node features: ', sum_feat)
+		print('Total weights for neighbours: ', sum_nei)
+
 
 	def vizu(self, true_pred, phi, feat_idx, neighbours):
 		"""
@@ -192,6 +218,8 @@ class GraphSHAP():
 		:return: nice visualisation (like SHAP) of each feature/neigbour's average
 		marginal contribution towards the prediction 
 		"""
+		# Explanations (phi) is of the form - tensor of dim (M*C)
+
 		# Explanation for this class - TODO: improve => print in for loop item next to influence
 		# Even do vizualisation of result like SHAPE does
 		print('Explanation for class {} are {}. They regard these features {} and these neighbours {}'\

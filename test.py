@@ -28,4 +28,4 @@ print('Test accuracy is {:.4f}'.format(test_acc))
 
 # Explain it with GraphSHAP
 graphshap = GraphSHAP(data, model)
-explanations = graphshap.explainer(node_index=0, hops=1, num_samples=10)
+explanations = graphshap.explainer(node_index=10, hops=2, num_samples=100)
