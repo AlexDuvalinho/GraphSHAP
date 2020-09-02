@@ -27,7 +27,7 @@ class GraphSHAP():
 		# Create a variable to store node features 
 		x = self.data.x[node_index,:]
 
-		# Store number of classes (TODO: condition on Cora or find other way to get this info)
+		# Store number of classes (TODO: if condition on Cora or find other way to get this info)
 		num_classes = (max(self.data.y)+1).item() # if Cora, use probas.shape of test.py or else
 
 		# Construct k hop subgraph of node of interest (denoted v)

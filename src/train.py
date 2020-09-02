@@ -8,43 +8,14 @@ import torch.nn.functional as F
 
 # from torch_geometric.data import DataLoader
 
-
-
-def train(model, data, num_epochs, verbose=True):
-	"""
-	:return: training error of trained GNN model on Cora dataset
-	"""
-	optimizer = torch.optim.Adam(model.parameters(), lr= 0.05)
-
-	# Train mode
-	train_error = []
-	model.train()
-
-	# For each epoch, compute predictions and backpropagate the loss
-	for epoch in range(num_epochs):
-
-		# Compute pred 
-		y_pred = model(data.x, data.edge_index)
-
-		# Learning phase via backpropagation
-		loss = F.nll_loss(y_pred[data.train_mask], data.y[data.train_mask])
-		optimizer.zero_grad()
-		loss.backward()
-		optimizer.step()
-		train_error.append(loss)
-		train_acc = accuracy(y_pred[data.train_mask], data.y[data.train_mask])
-		print('Epoch [{}/{}], Loss: {:.4f}, Acc: {:.4f}'.format(epoch+1, num_epochs, loss, train_acc))
-	# return train_error
-
-
-def train_and_val(model, data, num_epochs, verbose=True):
+def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
 	"""
 	Similar function as train above except that it combines training of the model
 	with its evaluation (epoch by epoch) on validation data
 	"""
 
 	# Define the optimizer for the learning process
-	optimizer = torch.optim.Adam(model.parameters(), lr= 0.01, weight_decay=5e-4)
+	optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
 	# Training and eval modes
 	train_loss_values, train_acc_values = [], []
@@ -142,3 +113,31 @@ def accuracy(output, labels):
 
 	# Return accuracy metric
 	return correct / len(labels)
+
+
+
+def train(model, data, num_epochs, verbose=True):
+	"""
+	:return: training error of trained GNN model on Cora dataset
+	"""
+	optimizer = torch.optim.Adam(model.parameters(), lr= 0.05)
+
+	# Train mode
+	train_error = []
+	model.train()
+
+	# For each epoch, compute predictions and backpropagate the loss
+	for epoch in range(num_epochs):
+
+		# Compute pred 
+		y_pred = model(data.x, data.edge_index)
+
+		# Learning phase via backpropagation
+		loss = F.nll_loss(y_pred[data.train_mask], data.y[data.train_mask])
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+		train_error.append(loss)
+		train_acc = accuracy(y_pred[data.train_mask], data.y[data.train_mask])
+		print('Epoch [{}/{}], Loss: {:.4f}, Acc: {:.4f}'.format(epoch+1, num_epochs, loss, train_acc))
+	# return train_error
