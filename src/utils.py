@@ -53,7 +53,7 @@ hparams_Amazon_GAT = hparams_Cora_GAT
 
 #params_Amazon_GAT = params_Cora_GAT
 params_Amazon_GAT = {
-	'num_epochs':10,
+	'num_epochs':120,
 	'lr':0.005, 
 	'wd':5e-4
 	}

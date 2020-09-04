@@ -22,12 +22,14 @@ def prepare_data(dataset, seed):
 	if dataset == 'Cora' or dataset=='PubMed' or dataset=='Citeseer':
 		path = os.path.join(dirname, 'data')
 		data = Planetoid(path, name=dataset, split='full', transform=T.NormalizeFeatures())[0]
+		data.num_classes = (max(data.y)+1).item() 
 		# dataset = Planetoid(path, name=dataset, split='public', transform=T.NormalizeFeatures(), num_train_per_class=20, num_val=500, num_test=1000)
 		# data = modify_train_mask(data)
 
 	elif dataset == 'Amazon':
 		path = os.path.join(dirname, 'data', 'Amazon')
 		data = Amazon(path, 'photo')[0]
+		data.num_classes = (max(data.y)+1).item() 
 		data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
 		# Amazon: 4896 train, 1224 val, 1530 test
 
@@ -38,9 +40,9 @@ def prepare_data(dataset, seed):
 
 	elif dataset == 'PPI':
 		path = os.path.join(dirname, 'data', 'PPI')
-		data, data.graphs = ppi_prepoc(dirname, seed)
-		#data = PPI(path, split='train')[0]
-		#data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
+		data = ppi_prepoc(dirname, seed)
+		data.x = data.graphs[0].x
+		data.num_classes = data.graphs[0].y.size(1)
 		
 	#elif dataset = 'MUTAG'
 
@@ -163,4 +165,4 @@ def ppi_prepoc(dirname, seed):
 			graph.val_mask = all_true if graph.split == 'val' else all_false
 			graph.test_mask = all_true if graph.split == 'test' else all_false
 
-	return data, data.graphs
+	return data

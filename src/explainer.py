@@ -30,6 +30,11 @@ class GraphSHAP():
 		# Store number of classes (TODO: if condition on Cora or find other way to get this info)
 		num_classes = (max(self.data.y)+1).item() # if Cora, use probas.shape of test.py or else
 
+		# Number of non-zero entries for the feature vector x_v
+		F = x[x!=0].shape[0]
+		# Store indexes of these non zero feature values
+		feat_idx = torch.nonzero(x)
+
 		# Construct k hop subgraph of node of interest (denoted v)
 		neighbours, _, _, _ =\
 			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
@@ -40,11 +45,6 @@ class GraphSHAP():
 		# Remove node v index from neighbours and store their number in D
 		neighbours = neighbours[neighbours!=node_index]
 		D = neighbours.shape[0] 
-
-	 	# Number of non-zero entries for the feature vector x_v
-		F = x[x!=0].shape[0]
-		# Store indexes of these non zero feature values
-		feat_idx = torch.nonzero(x)
 
 		# Total number of features + neighbours considered for node v
 		M = F+D
@@ -70,7 +70,7 @@ class GraphSHAP():
 		
 
 		### Print some information 
-		self.print_info(F, D, num_classes, node_index, phi)
+		self.print_info(F, D, num_classes, node_index, phi, feat_idx, neighbours)
 
 		### Visualisation 
 		# Call visu function
@@ -119,7 +119,7 @@ class GraphSHAP():
 			for j in range(F):
 				if z_[i,j].item()==1: 
 					X_v[i,feat_idx[j].item()]=1
-		
+
 			# Define new neighbourhood
 			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
 			nodes_id = []
@@ -180,7 +180,7 @@ class GraphSHAP():
 		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 		return phi
 
-	def print_info(self, F, D, num_classes, node_index, phi):
+	def print_info(self, F, D, num_classes, node_index, phi, feat_idx, neighbour):
 		"""
 		Displays some information about explanations - for a better comprehension and audit
 		"""
@@ -207,6 +207,44 @@ class GraphSHAP():
 				sum_nei += np.abs(pred_explanation[i])
 		print('Total weights for node features: ', sum_feat)
 		print('Total weights for neighbours: ', sum_nei)
+
+		# Note we focus on explanation for class predicted by the model here, so there is a bias towards 
+		# positive weights in our explanations (proba is close to 1 everytime). 
+		# Alternative is to view a class at random or the second best class 
+
+		# Select most influential neighbors and/or features (+ or -)
+		if F + D > 10: 
+			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation)), 6)
+			vals = [pred_explanation[idx] for idx in idxs]
+			influential_feat = {}
+			influential_nei = {}
+			for idx, val in zip(idxs, vals): 
+				if idx.item() < F: 
+					influential_feat[feat_idx[idx]] = val
+				else: 
+					influential_nei[neighbour[idx-F]] = val
+			print('Most influential features: ', [(item[0].item(),item[1].item()) for item in list(influential_feat.items())], 
+			'and neighbours', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())])
+
+		# Most influential features splitted bewteen neighbours and features
+		if F > 5:
+			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[:F])), 3)
+			vals = [pred_explanation[idx] for idx in idxs]
+			influential_feat = {}
+			for idx, val in zip(idxs, vals): 
+				influential_feat[feat_idx[idx]] = val
+			print('Most influential features: ', [(item[0].item(),item[1].item()) for item in list(influential_feat.items())] )
+
+		# Most influential features splitted bewteen neighbours and features
+		if D > 5: 
+			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[F:])), 3)
+			vals = [pred_explanation[F + idx] for idx in idxs]
+			influential_nei = {}
+			for idx, val in zip(idxs, vals): 
+				influential_nei[neighbour[idx]] = val
+			print('Most influential neighbours: ', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())] )
+			
+
 
 
 	def vizu(self, true_pred, phi, feat_idx, neighbours):

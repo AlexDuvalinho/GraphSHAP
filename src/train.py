@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import f1_score
 
 # from torch_geometric.data import DataLoader
 
@@ -49,9 +50,8 @@ def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
 																			val_loss.item(),
 																			val_acc.item())
 
-			# model_path = 'model.pth'	
+			#model_path = 'model.pth'
 			#torch.save(model.state_dict(), model_path)
-			#log += ' save model to {}'.format(model_path)
 
 			if verbose:
 				tqdm.write(log)
@@ -115,11 +115,11 @@ def accuracy(output, labels):
 	return correct / len(labels)
 
 
-
+"""
 def train(model, data, num_epochs, verbose=True):
-	"""
+	'''
 	:return: training error of trained GNN model on Cora dataset
-	"""
+	'''
 	optimizer = torch.optim.Adam(model.parameters(), lr= 0.05)
 
 	# Train mode
@@ -141,3 +141,54 @@ def train(model, data, num_epochs, verbose=True):
 		train_acc = accuracy(y_pred[data.train_mask], data.y[data.train_mask])
 		print('Epoch [{}/{}], Loss: {:.4f}, Acc: {:.4f}'.format(epoch+1, num_epochs, loss, train_acc))
 	# return train_error
+"""
+
+
+
+"""
+### PPI dataset 
+
+# Use train_ppi in train_and_val above
+def ppi_overall(model, data): 
+	#def train_ppi(model, data, num_epochs, lr, wd, verbose=True):
+	loss_op = torch.nn.BCEWithLogitsLoss()
+	optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+		
+	for epoch in range(1, 10):
+		loss = train_ppi(model, data)
+		val_f1 = test_ppi([df for df in data.graphs if df['split']=='val'])
+		test_f1 = test_ppi([df for df in data.graphs if df['split']=='test'])
+		print('Epoch: {:02d}, Loss: {:.4f}, Val: {:.4f}, Test: {:.4f}'.format(
+			epoch, loss, val_f1, test_f1))
+
+
+def train_ppi(model, data):
+	model.train()
+
+	total_loss = 0
+	len_training_data = 0
+	for df in data.graphs:
+		if df['split']=='train':
+			optimizer.zero_grad()
+			prediction = model(df.x, df.edge_index)
+			loss = loss_op(prediction, df.y) # multilabel 
+			total_loss += loss.item()
+			loss.backward()
+			optimizer.step()
+			len_training_data += 1 
+	return (total_loss / len_training_data)
+
+
+def test_ppi(loader):
+	model.eval()
+
+	ys, preds = [], []
+	for df in loader:
+		ys.append(df.y)
+		with torch.no_grad():
+			out = model(df.x, df.edge_index)
+		preds.append((out>0).float())
+
+	y, pred = torch.cat(ys, dim=0).numpy(), torch.cat(preds, dim=0).numpy()
+	return f1_score(y, pred, average='micro') if pred.sum() > 0 else 0
+"""

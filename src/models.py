@@ -37,7 +37,7 @@ class GAT(nn.Module):
 
 		self.conv_in = GATConv(input_dim, hidden_dim[0], heads=n_heads[0], dropout=self.dropout)
 		self.conv = [GATConv(hidden_dim[i-1] * n_heads[i-1], hidden_dim[i], heads=n_heads[i], dropout=self.dropout) for i in range(1,len(n_heads)-1)]
-		self.conv_out = GATConv(hidden_dim[-1] * n_heads[-2], output_dim, heads=n_heads[-1], dropout=self.dropout)
+		self.conv_out = GATConv(hidden_dim[-1] * n_heads[-2], output_dim, heads=n_heads[-1], dropout=self.dropout, concat=False)
 
 	def forward(self, x, edge_index):
 		x = F.dropout(x, p=self.dropout, training=self.training)
@@ -51,33 +51,6 @@ class GAT(nn.Module):
 		x = self.conv_out(x, edge_index)
 	
 		return F.log_softmax(x, dim=1)
-
-
-class Net(nn.Module):
-	def __init__(self, input_dim, hidden_dim, output_dim, dropout, n_heads):
-		super(Net, self).__init__()
-		self.conv1 = GATConv(input_dim, hidden_dim, heads=n_heads[0])
-		self.lin1 = torch.nn.Linear(train_dataset.num_features, n_heads[0] * hidden_dim)
-		self.conv2 = GATConv(n_heads[0] * hidden_dim, hidden_dim, heads=n_heads[1])
-		self.lin2 = torch.nn.Linear(n_heads[1]* hidden_dim, n_heads[1] * hidden_dim)
-		self.conv3 = GATConv(
-			n_heads[1] * hidden_dim, train_dataset.num_classes, heads=n_heads[2], concat=False)
-		self.lin3 = torch.nn.Linear(n_heads[2] * hidden_dim, train_dataset.num_classes)
-
-	def forward(self, x, edge_index):
-		ipdb.set_trace()
-
-		x = F.elu(self.conv1(x, edge_index) + self.lin1(x))
-		x = F.elu(self.conv2(x, edge_index) + self.lin2(x))
-		x = self.conv3(x, edge_index) + self.lin3(x)
-		return x
-
-
-
-
-
-
-
 
 
 """
