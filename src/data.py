@@ -72,7 +72,7 @@ def modify_train_mask(data):
 	return data
 
 
-def add_noise_features(data, num_noise):
+def add_noise_features(data, num_noise, binary=False):
 	"""
 	:param data: downloaded dataset 
 	:param num_noise: number of noise features we want to add
@@ -86,19 +86,21 @@ def add_noise_features(data, num_noise):
 	num_nodes = data.x.size(0)
 
 	# Define some random features (randomly), in addition to existing ones
-	noise_feat = torch.randn((num_nodes, num_noise))
-	noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
+	if binary:
+		noise_feat = torch.randint(2,size=(num_nodes, num_noise))
+	else: 
+		noise_feat = torch.randn((num_nodes, num_noise))
+		noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
 	data.x = torch.cat([data.x, noise_feat], dim=-1)
 
-	return data
-
+	return data, noise_feat
 
 def extract_test_nodes(data, num_samples):
 	"""
 	:param num_samples: 
 	:return: 
 	"""
-	test_indices = data.test_mask.cpu().numpu().nonzero()[0]
+	test_indices = data.test_mask.cpu().numpy().nonzero()[0]
 	node_indices = np.random.choice(test_indices, num_samples).tolist()
 	
 	return node_indices

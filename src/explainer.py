@@ -12,9 +12,10 @@ class GraphSHAP():
 		self.model = model
 		self.data = data
 		self.model.eval()
+		self.M = 0 # number of nonzero features
 		# Define more variables here ! (num_classes...)
 
-	def explainer(self, node_index=0, hops=1, num_samples=10):
+	def explainer(self, node_index=0, hops=1, num_samples=10, info='True'):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
@@ -47,22 +48,22 @@ class GraphSHAP():
 		D = neighbours.shape[0] 
 
 		# Total number of features + neighbours considered for node v
-		M = F+D
+		self.M = F+D
 
 		# Sample z' - binary vector of dimension (num_samples, M)
 		# F node features first, then D neighbors
-		z_ = torch.empty(num_samples, M).random_(2)
+		z_ = torch.empty(num_samples, self.M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
 
 		### Define weights associated with each sample using shapley kernel formula
-		weights = self.shapley_kernel(M,s)
+		weights = self.shapley_kernel(s)
 
 
 		###  Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, self.data.num_classes, num_samples, F, D, z_, neighbours, feat_idx)
+		fz = self.compute_pred(node_index, num_samples, F, D, z_, neighbours, feat_idx)
 		
 
 		### OLS estimator for weighted linear regression
@@ -70,7 +71,8 @@ class GraphSHAP():
 		
 
 		### Print some information 
-		self.print_info(F, D, self.data.num_classes, node_index, phi, feat_idx, neighbours)
+		if info=='True':
+			self.print_info(F, D, node_index, phi, feat_idx, neighbours)
 
 		### Visualisation 
 		# Call visu functionw
@@ -78,9 +80,8 @@ class GraphSHAP():
 
 		return phi
 
-	def shapley_kernel(self, M, s):
+	def shapley_kernel(self, s):
 		"""
-		:param M: number of features + number of neighbours
 		:param s: dimension of z' (number of features + neighbours included)
 		:return: [scalar] value of shapley value 
 		"""
@@ -90,13 +91,13 @@ class GraphSHAP():
 		for i in range(s.shape[0]):
 			a = s[i].item()
 			# Put an emphasis on samples where all or none features are included
-			if a == 0 or a == M: 
+			if a == 0 or a == self.M: 
 				shap_kernel.append(1000)
 			else: 
-				shap_kernel.append((M-1)/(scipy.special.binom(M,a)*a*(M-a)))
+				shap_kernel.append((self.M-1)/(scipy.special.binom(self.M,a)*a*(self.M-a)))
 		return torch.tensor(shap_kernel)
 
-	def compute_pred(self, node_index, num_classes, num_samples, F, D, z_, neighbours, feat_idx):
+	def compute_pred(self, node_index, num_samples, F, D, z_, neighbours, feat_idx):
 		"""
 		Variables are exactly as defined in explainer function, where compute_pred is used
 		This function aims to construct z (from z' and x_v) and then to compute f(z), 
@@ -131,7 +132,7 @@ class GraphSHAP():
 			excluded_nei[i] = nodes_id
 
 		# Init label f(z) for graphshap dataset - consider all classes
-		fz = torch.zeros((num_samples, num_classes))
+		fz = torch.zeros((num_samples, self.data.num_classes))
 		# Init final predicted class for each sample (informative)
 		classes_labels = torch.zeros(num_samples)
 		pred_confidence = torch.zeros(num_samples)
@@ -180,14 +181,14 @@ class GraphSHAP():
 		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 		return phi
 
-	def print_info(self, F, D, num_classes, node_index, phi, feat_idx, neighbour):
+	def print_info(self, F, D, node_index, phi, feat_idx, neighbour):
 		"""
 		Displays some information about explanations - for a better comprehension and audit
 		"""
 
 		# Print some information
 		print('Explanations include {} node features and {} neighbours for this node\
-		for {} classes'.format(F, D, num_classes))
+		for {} classes'.format(F, D, self.data.num_classes))
 		
 		# Compare with true prediction of the model - see what class should truly be explained
 		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)

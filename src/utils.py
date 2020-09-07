@@ -1,3 +1,9 @@
+INPUT_DIM = {'Cora': 1433,
+			'PubMed': 500,
+			'Amazon':745,
+			'PPI': 50,
+			'Reddit': 602}
+
 # Model structure hyperparameters for Cora dataset, GCN model
 hparams_Cora_GCN = {
 		'hidden_dim': [16],
