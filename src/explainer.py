@@ -28,7 +28,7 @@ class GraphSHAP():
 		x = self.data.x[node_index,:]
 
 		# Store number of classes (TODO: if condition on Cora or find other way to get this info)
-		num_classes = (max(self.data.y)+1).item() # if Cora, use probas.shape of test.py or else
+		# num_classes = (max(self.data.y)+1).item() # if Cora, use probas.shape of test.py or else
 
 		# Number of non-zero entries for the feature vector x_v
 		F = x[x!=0].shape[0]
@@ -62,7 +62,7 @@ class GraphSHAP():
 
 		###  Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, num_classes, num_samples, F, D, z_, neighbours, feat_idx)
+		fz = self.compute_pred(node_index, self.data.num_classes, num_samples, F, D, z_, neighbours, feat_idx)
 		
 
 		### OLS estimator for weighted linear regression
@@ -70,10 +70,10 @@ class GraphSHAP():
 		
 
 		### Print some information 
-		self.print_info(F, D, num_classes, node_index, phi, feat_idx, neighbours)
+		self.print_info(F, D, self.data.num_classes, node_index, phi, feat_idx, neighbours)
 
 		### Visualisation 
-		# Call visu function
+		# Call visu functionw
 		# Pass it true_pred
 
 		return phi

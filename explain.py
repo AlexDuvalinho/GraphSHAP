@@ -25,10 +25,11 @@ args = parser.parse_args()
 # Load the dataset
 data = prepare_data(args.dataset, args.seed)
 
+
 # Load the model 
 model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
 model = torch.load(model_path)
-model.eval()
+# model.eval()
 
 # Explain it with GraphSHAP
 graphshap = GraphSHAP(data, model)

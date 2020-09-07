@@ -43,6 +43,8 @@ def prepare_data(dataset, seed):
 		data = ppi_prepoc(dirname, seed)
 		data.x = data.graphs[0].x
 		data.num_classes = data.graphs[0].y.size(1)
+		for df in data.graphs: 
+			df.num_classes = data.num_classes
 		
 	#elif dataset = 'MUTAG'
 

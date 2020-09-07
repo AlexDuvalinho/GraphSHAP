@@ -29,6 +29,7 @@ data = prepare_data(args.dataset, args.seed)
 # Train the model - specific case for PPI dataset
 if args.dataset == "PPI":
 	model = main_ppi(type=args.model)
+	# test_ppi shows how to compute predictions (model(), then positive values => predict this class)
 
 else: 
 	# Retrieve the model and training hyperparameters depending the data/model given as input
