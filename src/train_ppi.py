@@ -43,8 +43,8 @@ def main_ppi(type):
 	"""
 	:arg type: 'GCN' or 'GAT'
 	"""
-	# Import PPI dataset 
-	path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'PPI')
+	# Import PPI dataset
+	path = osp.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),'data', 'PPI')
 	train_dataset = PPI(path, split='train')
 	val_dataset = PPI(path, split='val')
 	test_dataset = PPI(path, split='test')
@@ -52,6 +52,7 @@ def main_ppi(type):
 	val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
 	test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False)
 
+	PPI()
 	# Define training function 
 	def train():
 		model.train()

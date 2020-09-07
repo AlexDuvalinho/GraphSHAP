@@ -40,7 +40,7 @@ def prepare_data(dataset, seed):
 
 	elif dataset == 'PPI':
 		path = os.path.join(dirname, 'data', 'PPI')
-		data = ppi_prepoc(dirname, seed)
+		data = ppi_prepoc(path, seed)
 		data.x = data.graphs[0].x
 		data.num_classes = data.graphs[0].y.size(1)
 		for df in data.graphs: 
