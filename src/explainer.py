@@ -12,10 +12,10 @@ class GraphSHAP():
 		self.model = model
 		self.data = data
 		self.model.eval()
-		self.M = 0 # number of nonzero features
+		self.M = None # number of nonzero features - for each node index
 		# Define more variables here ! (num_classes...)
 
-	def explainer(self, node_index=0, hops=1, num_samples=10, info='True'):
+	def explainer(self, node_index=0, hops=1, num_samples=10, info=True):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
@@ -71,11 +71,11 @@ class GraphSHAP():
 		
 
 		### Print some information 
-		if info=='True':
+		if info:
 			self.print_info(F, D, node_index, phi, feat_idx, neighbours)
 
 		### Visualisation 
-		# Call visu functionw
+		# Call visu function
 		# Pass it true_pred
 
 		return phi

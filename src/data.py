@@ -91,7 +91,7 @@ def add_noise_features(data, num_noise, binary=False):
 	else: 
 		noise_feat = torch.randn((num_nodes, num_noise))
 		noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
-	data.x = torch.cat([data.x, noise_feat], dim=-1)
+	data.x = torch.cat([noise_feat, data.x], dim=-1)
 
 	return data, noise_feat
 
