@@ -72,41 +72,6 @@ def modify_train_mask(data):
 	return data
 
 
-def add_noise_features(data, num_noise, binary=False):
-	"""
-	:param data: downloaded dataset 
-	:param num_noise: number of noise features we want to add
-	:return: new dataset with additional noisy features
-	"""
-	# Do nothing if no noise feature to add 
-	if not num_noise: 
-		return data 
-
-	# Number of nodes in the dataset
-	num_nodes = data.x.size(0)
-
-	# Define some random features (randomly), in addition to existing ones
-	if binary:
-		noise_feat = torch.randint(2,size=(num_nodes, num_noise))
-	else: 
-		noise_feat = torch.randn((num_nodes, num_noise))
-		noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
-	data.x = torch.cat([noise_feat, data.x], dim=-1)
-
-	return data, noise_feat
-
-def extract_test_nodes(data, num_samples):
-	"""
-	:param num_samples: 
-	:return: 
-	"""
-	test_indices = data.test_mask.cpu().numpy().nonzero()[0]
-	node_indices = np.random.choice(test_indices, num_samples).tolist()
-	
-	return node_indices
-
-
-
 def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, seed):
 	"""
 	Get train, val and test split masks for `total_size` examples with the labels `y_true`. Performs stratified
@@ -130,9 +95,9 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
 
 	return torch.from_numpy(train_idxs), torch.from_numpy(val_idxs), torch.from_numpy(test_idxs)
 
+
 def split_function(y):
 	return _get_train_val_test_masks(y.shape[0], y, 0.2, 0.2, seed=0)
-
 
 
 def ppi_prepoc(dirname, seed):
@@ -170,3 +135,110 @@ def ppi_prepoc(dirname, seed):
 			graph.test_mask = all_true if graph.split == 'test' else all_false
 
 	return data
+
+
+def add_noise_features(data, num_noise, binary=False):
+	"""
+	:param data: downloaded dataset 
+	:param num_noise: number of noise features we want to add
+	:param binary: True if want binary node features 
+	:return: dataset with additional noisy features
+	"""
+	# Do nothing if no noise feature to add 
+	if not num_noise: 
+		return data 
+
+	# Number of nodes in the dataset
+	num_nodes = data.x.size(0)
+
+	# Define some random features (randomly), in addition to existing ones
+	if binary:
+		noise_feat = torch.randint(2,size=(num_nodes, num_noise))
+	else: 
+		noise_feat = torch.randn((num_nodes, num_noise))
+		noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
+	data.x = torch.cat([noise_feat, data.x], dim=-1)
+
+	return data, noise_feat
+
+
+def add_noise_neighbors(data, num_noise, node_indices, binary=False, connectedness='high'):
+	"""
+	:param data: downloaded dataset 
+	:param num_noise: number of noise features we want to add
+	:param binary: True if want binary node features 
+	:return: dataset with additional nodes, with noisy features and connections; 
+	and  noisy nodes features
+	"""
+	if not num_noise: 
+		return data
+	
+	# Number of features in the dataset
+	num_feat = data.x.size(1)
+	num_nodes = data.x.size(0)
+
+	# Add new nodes with random features 
+	if binary:
+		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([0.1]))
+		noise_nei_feat = m.sample((num_feat, num_noise)).T[0]
+	else: 
+		noise_nei_feat = torch.randn((num_noise, num_feat))
+		noise_nei_feat = noise_nei_feat - noise_nei_feat.mean(1, keepdim=True)
+	data.x = torch.cat([data.x, noise_nei_feat], dim=0)
+	new_num_nodes = data.x.size(0)
+	
+	# Add random edges incident to these nodes - according to desired level of connectivity
+	if connectedness == 'high': # few highly connected new nodes
+		adj_matrix = torch.randint(2,size=(num_noise, new_num_nodes))
+
+	elif connectedness == 'medium': # more sparser nodes, connected to targeted nodes of interest
+		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([0.1]))
+		adj_matrix = m.sample((new_num_nodes, num_noise)).T[0]
+		for i,idx in enumerate(node_indices): # each node of interest has at least one noisy neighbour
+			try: 
+				adj_matrix[i,idx]=1
+			except IndexError: # in case num_noise < test_samples
+				pass
+	else: 
+		adj_matrix = torch.zeros((num_noise, new_num_nodes))
+		for i,idx in enumerate(node_indices):
+			adj_matrix[i,idx]=1
+		while num_noise > i+1: 
+			l = node_indices + list(range(num_nodes,(num_nodes+i)))
+			i += 1
+			idx = random.sample(l,2)
+			adj_matrix[i,idx[0]]=1
+			adj_matrix[i,idx[1]]=1
+	
+	# Add defined edges to data adjacency matrix, in the correct form
+	for i, row in enumerate(adj_matrix):
+		indices = (row == 1).nonzero()
+		indices = torch.transpose(indices, 0, 1)
+		a = torch.full_like(indices, i + num_nodes)
+		adj_row = torch.cat((a,indices),0)
+		data.edge_index = torch.cat((data.edge_index,adj_row),1)
+		adj_row = torch.cat((indices,a),0)
+		data.edge_index = torch.cat((data.edge_index,adj_row),1)
+
+	# Update train/test/val masks - don't include these new nodes anywhere as there have no labels
+	test_mask = torch.empty(num_noise)
+	test_mask = torch.full_like(test_mask, False).bool()
+	data.train_mask = torch.cat((data.train_mask,test_mask),-1)
+	data.val_mask = torch.cat((data.val_mask,test_mask),-1)
+	data.test_mask = torch.cat((data.test_mask,test_mask),-1)
+	# Update labels randomly - no effect on the rest
+	data.y = torch.cat((data.y, test_mask),-1)
+
+	return data
+
+
+def extract_test_nodes(data, num_samples):
+	"""
+	:param data: dataset
+	:param num_samples: number of test samples desired
+	:return: list of indexes representing nodes used as test samples
+	"""
+	test_indices = data.test_mask.cpu().numpy().nonzero()[0]
+	node_indices = np.random.choice(test_indices, num_samples).tolist()
+	
+	return node_indices

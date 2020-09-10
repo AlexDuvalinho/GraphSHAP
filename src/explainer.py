@@ -13,9 +13,10 @@ class GraphSHAP():
 		self.data = data
 		self.model.eval()
 		self.M = None # number of nonzero features - for each node index
+		self.neighbors = None
 		# Define more variables here ! (num_classes...)
 
-	def explainer(self, node_index=0, hops=1, num_samples=10, info=True):
+	def explainer(self, node_index=0, hops=2, num_samples=10, info=True):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
@@ -45,6 +46,7 @@ class GraphSHAP():
 
 		# Remove node v index from neighbours and store their number in D
 		neighbours = neighbours[neighbours!=node_index]
+		self.neighbors = neighbours
 		D = neighbours.shape[0] 
 
 		# Total number of features + neighbours considered for node v
@@ -60,16 +62,13 @@ class GraphSHAP():
 		### Define weights associated with each sample using shapley kernel formula
 		weights = self.shapley_kernel(s)
 
-
 		###  Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
 		fz = self.compute_pred(node_index, num_samples, F, D, z_, neighbours, feat_idx)
 		
-
 		### OLS estimator for weighted linear regression
 		phi = self.OLS(z_, weights, fz) # dim (M*num_classes)
 		
-
 		### Print some information 
 		if info:
 			self.print_info(F, D, node_index, phi, feat_idx, neighbours)
@@ -79,6 +78,7 @@ class GraphSHAP():
 		# Pass it true_pred
 
 		return phi
+
 
 	def shapley_kernel(self, s):
 		"""
@@ -93,9 +93,12 @@ class GraphSHAP():
 			# Put an emphasis on samples where all or none features are included
 			if a == 0 or a == self.M: 
 				shap_kernel.append(1000)
+			elif scipy.special.binom(self.M,a) == float('+inf'):
+				shap_kernel.append(1)
 			else: 
 				shap_kernel.append((self.M-1)/(scipy.special.binom(self.M,a)*a*(self.M-a)))
 		return torch.tensor(shap_kernel)
+
 
 	def compute_pred(self, node_index, num_samples, F, D, z_, neighbours, feat_idx):
 		"""
@@ -168,6 +171,7 @@ class GraphSHAP():
 
 		return fz
 
+
 	def OLS(self, z_, weights, fz):
 		"""
 		:param z_: z' - binary vector  
@@ -177,9 +181,14 @@ class GraphSHAP():
 		phi is of dimension (M * num_classes)
 		"""
 		# OLS to estimate parameter of Weighted Linear Regression
-		tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
+		try:
+			tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
+		except np.linalg.LinAlgError: # matrix not invertible
+			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_) 
+			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1]))) 
 		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 		return phi
+
 
 	def print_info(self, F, D, node_index, phi, feat_idx, neighbour):
 		"""
@@ -245,7 +254,6 @@ class GraphSHAP():
 				influential_nei[neighbour[idx]] = val
 			print('Most influential neighbours: ', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())] )
 			
-
 
 
 	def vizu(self, true_pred, phi, feat_idx, neighbours):

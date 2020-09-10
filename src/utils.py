@@ -12,7 +12,7 @@ hparams_Cora_GCN = {
 
 # Training hyperparameters for Cora dataset, GCN model 
 params_Cora_GCN = {
-	'num_epochs':200,
+	'num_epochs':250,
 	'lr':0.01, 
 	'wd':5e-4
 	}
