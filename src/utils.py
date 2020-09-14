@@ -4,6 +4,9 @@ INPUT_DIM = {'Cora': 1433,
 			'PPI': 50,
 			'Reddit': 602}
 
+DIM_FEAT_P = {'Cora': 0.013,
+			'PubMed':0.1}
+
 # Model structure hyperparameters for Cora dataset, GCN model
 hparams_Cora_GCN = {
 		'hidden_dim': [16],
@@ -12,7 +15,7 @@ hparams_Cora_GCN = {
 
 # Training hyperparameters for Cora dataset, GCN model 
 params_Cora_GCN = {
-	'num_epochs':250,
+	'num_epochs':50,
 	'lr':0.01, 
 	'wd':5e-4
 	}
@@ -25,7 +28,7 @@ hparams_Cora_GAT = {
 		}
 
 params_Cora_GAT = {
-	'num_epochs':200,
+	'num_epochs':100,
 	'lr':0.005, 
 	'wd':5e-4
 	}
@@ -33,11 +36,24 @@ params_Cora_GAT = {
 
 # PubMed - GCN
 hparams_PubMed_GCN = hparams_Cora_GCN 
-params_PubMed_GCN = params_Cora_GCN
+params_PubMed_GCN = {
+	'num_epochs':150,
+	'lr':0.01, 
+	'wd':5e-4
+	}
 
 # PubMed - GAT 
-hparams_PubMed_GAT = hparams_Cora_GAT 
-params_PubMed_GAT = params_Cora_GAT
+hparams_PubMed_GAT = {
+		'hidden_dim': [8],
+		'dropout': 0.6,
+		'n_heads': [8,8]
+		}
+
+params_PubMed_GAT = {
+	'num_epochs':120,
+	'lr':0.005, 
+	'wd':5e-4
+	}
 # suggested n_heads = [8,8] with more epochs, but not necessary and better in this case
 
 
@@ -47,22 +63,11 @@ hparams_Amazon_GCN = {
 		'dropout': 0.5
 		}
 
-# Training hyperparameters for Cora dataset, GCN model 
-params_Amazon_GCN = {
-	'num_epochs':150,
-	'lr':0.01, 
-	'wd':5e-4
-	}
+params_Amazon_GCN = params_PubMed_GCN
 
 # Amazon - GAT
-hparams_Amazon_GAT = hparams_Cora_GAT 
-
-#params_Amazon_GAT = params_Cora_GAT
-params_Amazon_GAT = {
-	'num_epochs':120,
-	'lr':0.005, 
-	'wd':5e-4
-	}
+hparams_Amazon_GAT = hparams_PubMed_GAT 
+params_Amazon_GAT = params_PubMed_GAT
 
 
 # PPI - GCN

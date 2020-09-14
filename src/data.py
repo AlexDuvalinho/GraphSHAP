@@ -21,7 +21,8 @@ def prepare_data(dataset, seed):
 	# Download and store dataset at chosen location
 	if dataset == 'Cora' or dataset=='PubMed' or dataset=='Citeseer':
 		path = os.path.join(dirname, 'data')
-		data = Planetoid(path, name=dataset, split='full', transform=T.NormalizeFeatures())[0]
+		data = Planetoid(path, name=dataset, split='full')[0]
+		# data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
 		data.num_classes = (max(data.y)+1).item() 
 		# dataset = Planetoid(path, name=dataset, split='public', transform=T.NormalizeFeatures(), num_train_per_class=20, num_val=500, num_test=1000)
 		# data = modify_train_mask(data)
@@ -33,7 +34,7 @@ def prepare_data(dataset, seed):
 		data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
 		# Amazon: 4896 train, 1224 val, 1530 test
 
-	elif dataset == 'Reddit':
+	elif dataset == 'Reddit': 
 		path = os.path.join(dirname, 'data', 'Reedit')
 		data = Reddit(path)[0]
 		data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
@@ -80,7 +81,7 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
 	# Split into a train, val and test set 
 	# Store indexes of the nodes belong to train, val and test set 
 	indexes = range(total_size)
-	indexes_train, indexes_test = train_test_split(indexes, test_size=test_fraction, stratify=y_true, random_state=0)
+	indexes_train, indexes_test = train_test_split(indexes, test_size=test_fraction, stratify=y_true, random_state=seed)
 	indexes_train, indexes_val = train_test_split(indexes_train, test_size=val_fraction, stratify=y_true[indexes_train],
 													random_state=seed)
 	# Init masks 
@@ -97,7 +98,7 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
 
 
 def split_function(y):
-	return _get_train_val_test_masks(y.shape[0], y, 0.2, 0.2, seed=0)
+	return _get_train_val_test_masks(y.shape[0], y, 0.2, 0.2, seed=10)
 
 
 def ppi_prepoc(dirname, seed):
@@ -137,13 +138,14 @@ def ppi_prepoc(dirname, seed):
 	return data
 
 
-def add_noise_features(data, num_noise, binary=False):
+def add_noise_features(data, num_noise, binary=False, p=0.5):
 	"""
 	:param data: downloaded dataset 
 	:param num_noise: number of noise features we want to add
 	:param binary: True if want binary node features 
 	:return: dataset with additional noisy features
 	"""
+
 	# Do nothing if no noise feature to add 
 	if not num_noise: 
 		return data 
@@ -152,21 +154,26 @@ def add_noise_features(data, num_noise, binary=False):
 	num_nodes = data.x.size(0)
 
 	# Define some random features (randomly), in addition to existing ones
-	if binary:
-		noise_feat = torch.randint(2,size=(num_nodes, num_noise))
-	else: 
-		noise_feat = torch.randn((num_nodes, num_noise))
-		noise_feat = noise_feat - noise_feat.mean(1, keepdim=True)
+	m = torch.distributions.bernoulli.Bernoulli(torch.tensor([p]))
+	noise_feat = m.sample((num_noise, num_nodes)).T[0]
+	#noise_feat = torch.randint(2,size=(num_nodes, num_noise))
+	if not binary: 
+		noise_feat_bis = torch.rand((num_nodes, num_noise))
+		# noise_feat_bis = noise_feat_bis - noise_feat_bis.mean(1, keepdim=True)
+		noise_feat = torch.min(noise_feat, noise_feat_bis)
 	data.x = torch.cat([noise_feat, data.x], dim=-1)
 
 	return data, noise_feat
 
 
-def add_noise_neighbors(data, num_noise, node_indices, binary=False, connectedness='high'):
+def add_noise_neighbors(data, num_noise, node_indices, binary=False, p=0.5, connectedness='high'):
 	"""
 	:param data: downloaded dataset 
 	:param num_noise: number of noise features we want to add
+	:param node_indices: list of test samples 
 	:param binary: True if want binary node features 
+	:param p: for binary features, proba that each feature = 1
+	:param connectedness: how connected are new nodes, either 'low', 'medium' or 'high' 
 	:return: dataset with additional nodes, with noisy features and connections; 
 	and  noisy nodes features
 	"""
@@ -179,7 +186,7 @@ def add_noise_neighbors(data, num_noise, node_indices, binary=False, connectedne
 
 	# Add new nodes with random features 
 	if binary:
-		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([0.1]))
+		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([p]))
 		noise_nei_feat = m.sample((num_feat, num_noise)).T[0]
 	else: 
 		noise_nei_feat = torch.randn((num_noise, num_feat))
@@ -202,7 +209,10 @@ def add_noise_neighbors(data, num_noise, node_indices, binary=False, connectedne
 	else: 
 		adj_matrix = torch.zeros((num_noise, new_num_nodes))
 		for i,idx in enumerate(node_indices):
-			adj_matrix[i,idx]=1
+			try:
+				adj_matrix[i,idx]=1
+			except IndexError:
+				pass
 		while num_noise > i+1: 
 			l = node_indices + list(range(num_nodes,(num_nodes+i)))
 			i += 1

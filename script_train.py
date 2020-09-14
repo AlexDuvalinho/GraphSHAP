@@ -13,11 +13,11 @@ the desired GNN model on this same dataset.
 # Argument parser
 # use if __name__=='main': and place the rest in a function that you call 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model", type=str, default= 'GCN', 
+parser.add_argument("--model", type=str, default= 'GAT', 
 							help= "Name of the GNN: GCN or GAT")
-parser.add_argument("--dataset", type=str, default= 'Cora',
+parser.add_argument("--dataset", type=str, default= 'PubMed',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--seed", type=int, default='10')
+parser.add_argument("--seed", type=int, default=10)
 parser.add_argument("--save", type=str, default='False',
 							help= "True to save the trained model obtained")
 args = parser.parse_args()

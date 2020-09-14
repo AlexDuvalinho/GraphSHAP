@@ -1,4 +1,5 @@
 import os.path as osp
+import os
 import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import PPI
@@ -52,7 +53,6 @@ def main_ppi(type):
 	val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
 	test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False)
 
-	PPI()
 	# Define training function 
 	def train():
 		model.train()
