@@ -18,7 +18,7 @@ parser.add_argument("--model", type=str, default= 'GAT',
 parser.add_argument("--dataset", type=str, default= 'PubMed',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
 parser.add_argument("--seed", type=int, default=10)
-parser.add_argument("--save", type=str, default='False',
+parser.add_argument("--save", type=str, default=False,
 							help= "True to save the trained model obtained")
 args = parser.parse_args()
 
@@ -54,6 +54,6 @@ else:
 	print('Test accuracy is {:.4f}'.format(test_acc))
 
 # Save model
-if args.save == 'True':
+if args.save:
 	model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)	
 	torch.save(model, model_path)

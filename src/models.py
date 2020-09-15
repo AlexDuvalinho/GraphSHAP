@@ -39,18 +39,19 @@ class GAT(nn.Module):
 		self.conv = [GATConv(hidden_dim[i-1] * n_heads[i-1], hidden_dim[i], heads=n_heads[i], dropout=self.dropout) for i in range(1,len(n_heads)-1)]
 		self.conv_out = GATConv(hidden_dim[-1] * n_heads[-2], output_dim, heads=n_heads[-1], dropout=self.dropout, concat=False)
 
-	def forward(self, x, edge_index):
+	def forward(self, x, edge_index, att=False):
 		x = F.dropout(x, p=self.dropout, training=self.training)
-		x = F.elu(self.conv_in(x, edge_index))
+		x, alpha = self.conv_in(x, edge_index, return_attention_weights=att)
+		x = F.elu(x)
 
 		for attention in self.conv:
 			x = F.dropout(x, p=self.dropout, training=self.training)
 			x = F.elu(attention(x, edge_index))
 		
 		x = F.dropout(x, p=self.dropout, training=self.training)
-		x = self.conv_out(x, edge_index)
+		x, alpha2 = self.conv_out(x, edge_index, return_attention_weights=att)
 	
-		return F.log_softmax(x, dim=1)
+		return F.log_softmax(x, dim=1), alpha, alpha2
 
 
 """

@@ -161,7 +161,8 @@ class GraphSHAP():
 			X[node_index,:] = X_v[key,:]
 
 			# Apply model on (X,A) as input. 
-			proba = self.model(x=X, edge_index=A).exp()[node_index] 
+			proba, _, _ = self.model(x=X, edge_index=A)
+			proba = proba.exp()[node_index] 
 			
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1) # optional

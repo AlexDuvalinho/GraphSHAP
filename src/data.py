@@ -185,12 +185,11 @@ def add_noise_neighbors(data, num_noise, node_indices, binary=False, p=0.5, conn
 	num_nodes = data.x.size(0)
 
 	# Add new nodes with random features 
-	if binary:
-		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([p]))
-		noise_nei_feat = m.sample((num_feat, num_noise)).T[0]
-	else: 
-		noise_nei_feat = torch.randn((num_noise, num_feat))
-		noise_nei_feat = noise_nei_feat - noise_nei_feat.mean(1, keepdim=True)
+	m = torch.distributions.bernoulli.Bernoulli(torch.tensor([p]))
+	noise_nei_feat = m.sample((num_feat, num_noise)).T[0]
+	if not binary: 
+		noise_nei_feat_bis = torch.rand((num_noise, num_feat))
+		noise_nei_feat = torch.min(noise_nei_feat, noise_nei_feat_bis)
 	data.x = torch.cat([data.x, noise_nei_feat], dim=0)
 	new_num_nodes = data.x.size(0)
 	

@@ -145,3 +145,68 @@ for df in data.graphs:
 	graphshap = GraphSHAP(df, model)
 	explanations = graphshap.explainer(10, 2, 10)
 """
+
+
+
+
+
+
+
+class GAT(nn.Module):
+	def __init__(self, input_dim, hidden_dim, output_dim, dropout, n_heads):
+		super(GAT, self).__init__()
+		self.dropout = dropout
+
+		self.conv_in = GATConv(input_dim, hidden_dim[0], heads=n_heads[0], dropout=self.dropout)
+		self.conv = [GATConv(hidden_dim[i-1] * n_heads[i-1], hidden_dim[i], heads=n_heads[i], dropout=self.dropout) for i in range(1,len(n_heads)-1)]
+		self.conv_out = GATConv(hidden_dim[-1] * n_heads[-2], output_dim, heads=n_heads[-1], dropout=self.dropout, concat=False)
+
+	def forward(self, x, edge_index, return_attention_weights=True):
+		x = F.dropout(x, p=self.dropout, training=self.training)
+		x = F.elu(self.conv_in(x, edge_index))
+
+		for attention in self.conv:
+			x = F.dropout(x, p=self.dropout, training=self.training)
+			x = F.elu(attention(x, edge_index))
+		
+		x = F.dropout(x, p=self.dropout, training=self.training)
+		x = self.conv_out(x, edge_index)
+	
+		return F.log_softmax(x, dim=1)
+
+model = GAT(input_dim=data.x.size(1), output_dim=data.num_classes, **eval(hyperparam) )
+
+log_logits, x = model(x=data.x, edge_index=data.edge_index, return_attention_weights=True) # [2708, 7]
+
+
+import torch
+import torch_geometric as pyg
+
+torch.manual_seed(0)
+l= GATConv(data.x.size(1), data.num_classes)
+x, alpha = l(data.x,data.edge_index,return_attention_weights=True)
+
+print(alpha)
+
+
+
+
+
+
+
+
+class GAT(nn.Module):
+	def __init__(self, input_dim, hidden_dim, output_dim, n_heads):
+		super(GAT, self).__init__()
+		self.conv = GATConv(input_dim, hidden_dim, n_heads)
+		self.conv1 = GATConv(hidden_dim, output_dim, n_heads, concat=False)
+	
+	def forward(self, x, edge_index, return_attention_weights=True):
+		x, alpha = self.conv(x, edge_index, return_attention_weights=True)
+		x  = self.conv1(x, edge_index)
+		return F.log_softmax(x, dim=1), alpha
+
+
+model = GAT(data.x.size(1), 16, data.num_classes, 1)
+
+y, alpha = model(data.x, data.edge_index, return_attention_weights=True)

@@ -141,7 +141,7 @@ def filter_useless_nodes(args_model,
 							args_num_samples,
 							args_test_samples,
 							args_K,
-							args_num_noise_nei,
+							args_num_noise_nodes,
 							args_p,
 							args_binary,
 							args_connectedness,
@@ -159,9 +159,12 @@ def filter_useless_nodes(args_model,
 	args_model = 'GAT'
 	args_hops = 2
 	args_num_samples = 100
-	args_test_samples = 10
-	args_num_noise_nei = 20
+	args_test_samples = 20
+	args_num_noise_nodes = 20
 	args_K= 5 # maybe def depending on M 
+	args_p = 0.013
+	args_connectedness = 'low'
+	args_binary=True
 	'''
 	#### Create function from here. Maybe create training fct first, to avoid retraining the model.
 
@@ -173,7 +176,7 @@ def filter_useless_nodes(args_model,
 		node_indices = extract_test_nodes(data, args_test_samples)
 
 	# Include noisy neighbours
-	data = add_noise_neighbors(data, args_num_noise_nei, node_indices, binary=args_binary, p=args_p, connectedness=args_connectedness)
+	data = add_noise_neighbors(data, args_num_noise_nodes, node_indices, binary=args_binary, p=args_p, connectedness=args_connectedness)
 	# data, noise_feat = add_noise_features(data, num_noise=args_num_noise_feat, binary=True)
 	
 	# Define training parameters depending on (model-dataset) couple
@@ -182,12 +185,42 @@ def filter_useless_nodes(args_model,
 
 	# Define the model
 	if args_model == 'GCN':
-		model = GCN(input_dim=data.x.size(1), output_dim= data.num_classes, **eval(hyperparam) )
+		model = GCN(input_dim=data.x.size(1), output_dim=data.num_classes, **eval(hyperparam) )
 	else:
-		model = GAT(input_dim=data.x.size(1), output_dim= data.num_classes,  **eval(hyperparam) )
+		model = GAT(input_dim=data.x.size(1), output_dim=data.num_classes, **eval(hyperparam) )
 
 	# Re-train the model on dataset with noisy features 
 	train_and_val(model, data, **eval(param))
+
+	# Study attention weights of noisy nodes - for 20 new nodes
+	def study_attention_weights(data, model):
+		"""
+		Studies the attention weights of the GAT model 
+		"""
+		y, alpha, alpha_bis = model(data.x, data.edge_index, att=True)
+
+		edges1, alpha1 = alpha[0][:, :-(data.x.size(0)-1)], alpha[1][:-(data.x.size(0)-1), :] # remove self loops att
+		edges2, alpha2 = alpha_bis[0][:, :-(data.x.size(0)-1)], alpha_bis[1][:-(data.x.size(0)-1)]
+		
+		att1 = []
+		att2 = []
+		for i in range( data.x.size(0) - args_test_samples, (data.x.size(0)-1)):
+			ind = (edges1==i).nonzero()
+			for j in ind[:,1]:
+				att1.append(torch.mean(alpha1[j]))
+				att2.append(alpha2[j][0])
+		
+		# It looks like these noisy nodes are very important 
+		print('av attention',  (torch.mean(alpha1) + torch.mean(alpha2))/2 )  # 0.18
+		(torch.mean(torch.stack(att1)) + torch.mean(torch.stack(att2)))/2 # 0.32
+
+		# In fact, noisy nodes are slightly below average in terms of attention received
+		# Importance of interest: look only at imp. of noisy nei for test nodes
+		print('attention 1 av. for noisy nodes: ', torch.mean(torch.stack(att1[0::2])))
+		print('attention 2 av. for noisy nodes: ', torch.mean(torch.stack(att2[0::2])))
+
+	# Study attention weights
+	study_attention_weights(data, model)
 
 	# Define explainer
 	graphshap = GraphSHAP(data, model)
@@ -211,14 +244,16 @@ def filter_useless_nodes(args_model,
 		M.append(graphshap.M)
 
 		# Number of noisy nodes in the subgraph of node_idx 
-		num_noisy_nodes = len([n_idx for n_idx in graphshap.neighbors if n_idx >= data.x.size(0)-args_num_noise_nei])
+		num_noisy_nodes = len([n_idx for n_idx in graphshap.neighbors if n_idx >= data.x.size(0)-args_num_noise_nodes])
 
 		total_neigbours.append(len(graphshap.neighbors))
 
 		# Multilabel classification - consider all classes instead of focusing on the
 		# class that is predicted by our model 
 		num_noise_neis = [] # one element for each class of a test sample
-		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+		#true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+		proba, _, _ = model(x=data.x, edge_index=data.edge_index)
+		true_conf, predicted_class = proba.exp()[node_idx].max(dim=0)
 		for i in range(data.num_classes):
 
 			# Store indexes of K most important features, for each class
@@ -242,20 +277,22 @@ def filter_useless_nodes(args_model,
 		print('There are {} noise neighbours found in the explanations of {} test samples, an average of {} per sample'\
 			.format(sum(total_num_noise_neis),args_test_samples,sum(total_num_noise_neis)/args_test_samples) )
 
-		print(np.sum(pred_class_num_noise_neis), 'for the predicted class only' )
+		print(np.sum(pred_class_num_noise_neis)/args_test_samples, 'for the predicted class only' )
 
 		print('Proportion of explanations showing noisy neighbours: {:.2f}%'.format(100 * sum(total_num_noise_neis) / ( args_K* args_test_samples* data.num_classes)) )
 
-		print('Proportion of noisy neighbours found in explanations : {:.2f}%'.format(100 * sum(total_num_noise_neis) / (args_test_samples * args_num_noise_nei * data.num_classes)))
+		perc = 100 * sum(total_num_noise_neis) / (args_test_samples * args_num_noise_nodes * data.num_classes)
+		perc2 = 100 * (( args_K* args_test_samples* data.num_classes)  - sum(total_num_noise_neis)) / (np.sum(M) - sum(total_num_noisy_nei))
+		print('Proportion of noisy neighbours found in explanations vs normal features: {:.2f}% vs {:.2f}'.format(perc, perc2))
 
-		print('Proportion of neigbours that are noisy (in subgraphs): {:.2f}%'.format(100 * sum(total_num_noisy_nei) / sum(total_neigbours)))
+		print('Proportion of nodes in subgraph that are noisy: {:.2f}%'.format(100 * sum(total_num_noisy_nei) / sum(total_neigbours)))
 		
 		print('Proportion of noisy neighbours among features: {:.2f}%'.format(100 * sum(total_num_noisy_nei) / np.sum(M)) )
 		
 	# Plot of kernel density estimates of number of noisy features included in explanation
 	# Do for all benchmarks (with diff colors) and plt.show() to get on the same graph 
 	plot_dist(total_num_noise_neis, label='GraphSHAP', color='g')
-	plt.show()
+	#plt.show()
 
 	return total_num_noise_neis
 

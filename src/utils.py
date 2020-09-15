@@ -4,6 +4,16 @@ INPUT_DIM = {'Cora': 1433,
 			'PPI': 50,
 			'Reddit': 602}
 
+EVAL1_CORA = {'args_p':0.013,
+			'args_binary':True,
+			'args_num_noise_feat':200,
+			'args_num_noise_nei':10}
+
+EVAL1_PUBMED = {'args_p':0.1,
+			'args_binary':False,
+			'args_num_noise_feat':75,
+			'args_num_noise_nei':10}
+
 DIM_FEAT_P = {'Cora': 0.013,
 			'PubMed':0.1}
 
