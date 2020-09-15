@@ -1,7 +1,7 @@
 # Use files in src folder
 import torch
 from src.data import prepare_data
-from src.explainer import GraphSHAP
+from src.explainers import GraphSHAP, Greedy
 import argparse
 
 
@@ -12,6 +12,8 @@ parser.add_argument("--model", type=str, default= 'GCN',
 							help= "Name of the GNN: GCN or GAT")
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
+parser.add_argument("--explainer", type=str, default= 'GraphSHAP',
+							help= "Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
 parser.add_argument("--seed", type=int, default='10')
 parser.add_argument("--node_index", type=int, default=0,
 							help="index of the node whose prediction is explained")
@@ -32,8 +34,7 @@ model = torch.load(model_path)
 # model.eval()
 
 # Explain it with GraphSHAP
-graphshap = GraphSHAP(data, model)
-explanations = graphshap.explainer(node_index= args.node_index, 
+explainer = eval(args.explainer)(data, model)
+explanations = explainer.explainer(node_index=args.node_index, 
 									hops=args.hops, 
 									num_samples=args.num_samples)
-
