@@ -14,20 +14,20 @@ parser.add_argument("--hops", type=int, default=2,
 							help= 'k of k-hops neighbours considered for the node of interest')
 parser.add_argument("--num_samples", type=int, default=100,
 							help= 'number of coalitions sampled')
-parser.add_argument("--test_samples", type=int, default=20,
+parser.add_argument("--test_samples", type=int, default=10,
 							help='number of test samples for evaluation')
 parser.add_argument("--K", type=int, default=5,
 							help= 'number of most important features considered')
 parser.add_argument("--num_noise_feat", type=int, default=10,
 							help='number of noisy features')
-parser.add_argument("--num_noise_nodes", type=int, default=20,
+parser.add_argument("--num_noise_nodes", type=int, default=10,
 							help= 'number of noisy nodes')
-parser.add_argument("--p", type=float, default=0.0001,
+parser.add_argument("--p", type=float, default=0.5,
 							help= 'proba of existance for each feature, if binary')
 parser.add_argument("--binary", type=bool, default=True,
 							help= 'if noisy features are binary or not')
-parser.add_argument("--connectedness", type=str, default='high',
-							help= 'how connected are the noisy nodes we define')
+parser.add_argument("--connectedness", type=str, default='low',
+							help= 'how connected are the noisy nodes we define: low, high or medium')
 args = parser.parse_args()
 
 

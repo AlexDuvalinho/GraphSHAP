@@ -90,6 +90,7 @@ def filter_useless_features(args_model,
 		# class that is predicted by our model 
 		num_noise_feats = []
 		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+
 		for i in range(data.num_classes):
 
 			# Store indexes of K most important features, for each class
@@ -159,11 +160,11 @@ def filter_useless_nodes(args_model,
 	args_model = 'GAT'
 	args_hops = 2
 	args_num_samples = 100
-	args_test_samples = 20
+	args_test_samples = 10
 	args_num_noise_nodes = 20
 	args_K= 5 # maybe def depending on M 
 	args_p = 0.013
-	args_connectedness = 'low'
+	args_connectedness = 'medium'
 	args_binary=True
 	'''
 	#### Create function from here. Maybe create training fct first, to avoid retraining the model.
@@ -197,19 +198,20 @@ def filter_useless_nodes(args_model,
 		"""
 		Studies the attention weights of the GAT model 
 		"""
-		y, alpha, alpha_bis = model(data.x, data.edge_index, att=True)
+		_, alpha, alpha_bis = model(data.x, data.edge_index, att=True)
 
-		edges1, alpha1 = alpha[0][:, :-(data.x.size(0)-1)], alpha[1][:-(data.x.size(0)-1), :] # remove self loops att
-		edges2, alpha2 = alpha_bis[0][:, :-(data.x.size(0)-1)], alpha_bis[1][:-(data.x.size(0)-1)]
+		edges, alpha1 = alpha[0][:, :-(data.x.size(0)-1)], alpha[1][:-(data.x.size(0)-1), :] # remove self loops att
+		alpha2 = alpha_bis[1][:-(data.x.size(0)-1)]
 		
 		att1 = []
 		att2 = []
 		for i in range( data.x.size(0) - args_test_samples, (data.x.size(0)-1)):
-			ind = (edges1==i).nonzero()
+			ind = (edges==i).nonzero()
 			for j in ind[:,1]:
 				att1.append(torch.mean(alpha1[j]))
 				att2.append(alpha2[j][0])
-		
+		print('shape attention noisy', len(att2))
+
 		# It looks like these noisy nodes are very important 
 		print('av attention',  (torch.mean(alpha1) + torch.mean(alpha2))/2 )  # 0.18
 		(torch.mean(torch.stack(att1)) + torch.mean(torch.stack(att2)))/2 # 0.32
@@ -220,7 +222,8 @@ def filter_useless_nodes(args_model,
 		print('attention 2 av. for noisy nodes: ', torch.mean(torch.stack(att2[0::2])))
 
 	# Study attention weights
-	study_attention_weights(data, model)
+	if str(type(model)) == "<class 'src.models.GAT'>":
+		study_attention_weights(data, model)
 
 	# Define explainer
 	graphshap = GraphSHAP(data, model)
@@ -251,9 +254,8 @@ def filter_useless_nodes(args_model,
 		# Multilabel classification - consider all classes instead of focusing on the
 		# class that is predicted by our model 
 		num_noise_neis = [] # one element for each class of a test sample
-		#true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
-		proba, _, _ = model(x=data.x, edge_index=data.edge_index)
-		true_conf, predicted_class = proba.exp()[node_idx].max(dim=0)
+		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+		
 		for i in range(data.num_classes):
 
 			# Store indexes of K most important features, for each class

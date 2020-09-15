@@ -72,8 +72,7 @@ def train_on_epoch(model, data, optimizer):
 	"""
 	model.train()
 	optimizer.zero_grad()
-	output, _, _= model(data.x, data.edge_index, att=False)
-
+	output = model(data.x, data.edge_index)
 	train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
 	train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
 
@@ -91,7 +90,7 @@ def evaluate(model, data, mask):
 	model.eval()
 
 	with torch.no_grad():
-		output, _, _ = model(data.x, data.edge_index)
+		output = model(data.x, data.edge_index)
 		loss = F.nll_loss(output[mask], data.y[mask])
 		acc = accuracy(output[mask], data.y[mask])
 

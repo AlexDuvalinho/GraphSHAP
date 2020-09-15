@@ -39,70 +39,31 @@ class GAT(nn.Module):
 		self.conv = [GATConv(hidden_dim[i-1] * n_heads[i-1], hidden_dim[i], heads=n_heads[i], dropout=self.dropout) for i in range(1,len(n_heads)-1)]
 		self.conv_out = GATConv(hidden_dim[-1] * n_heads[-2], output_dim, heads=n_heads[-1], dropout=self.dropout, concat=False)
 
-	def forward(self, x, edge_index, att=False):
+	def forward(self, x, edge_index, att=None):
 		x = F.dropout(x, p=self.dropout, training=self.training)
-		x, alpha = self.conv_in(x, edge_index, return_attention_weights=att)
-		x = F.elu(x)
-
-		for attention in self.conv:
-			x = F.dropout(x, p=self.dropout, training=self.training)
-			x = F.elu(attention(x, edge_index))
 		
-		x = F.dropout(x, p=self.dropout, training=self.training)
-		x, alpha2 = self.conv_out(x, edge_index, return_attention_weights=att)
-	
-		return F.log_softmax(x, dim=1), alpha, alpha2
+		if att: # if we want to see attention weights
+			x, alpha = self.conv_in(x, edge_index, return_attention_weights=att)
+			x = F.elu(x)
 
+			for attention in self.conv:
+				x = F.dropout(x, p=self.dropout, training=self.training)
+				x = F.elu(attention(x, edge_index))
+			
+			x = F.dropout(x, p=self.dropout, training=self.training)
+			x, alpha2 = self.conv_out(x, edge_index, return_attention_weights=att)
+		
+			return F.log_softmax(x, dim=1), alpha, alpha2
+		
+		else: 
+			x = self.conv_in(x, edge_index)
+			x = F.elu(x)
 
-"""
-class GraphSAGE(nn.Module):
-	def __init__(self, in_channels, hidden_channels, out_channels):
-		super(SAGE, self).__init__()
-
-		self.num_layers = 2
-
-		self.convs = torch.nn.ModuleList()
-		self.convs.append(SAGEConv(in_channels, hidden_channels))
-		self.convs.append(SAGEConv(hidden_channels, out_channels))
-
-	def forward(self, x, adjs):
-		# `train_loader` computes the k-hop neighborhood of a batch of nodes,
-		# and returns, for each layer, a bipartite graph object, holding the
-		# bipartite edges `edge_index`, the index `e_id` of the original edges,
-		# and the size/shape `size` of the bipartite graph.
-		# Target nodes are also included in the source nodes so that one can
-		# easily apply skip-connections or add self-loops.
-		for i, (edge_index, _, size) in enumerate(adjs):
-			x_target = x[:size[1]]  # Target nodes are always placed first.
-			x = self.convs[i]((x, x_target), edge_index)
-			if i != self.num_layers - 1:
-				x = F.relu(x)
-				x = F.dropout(x, p=0.5, training=self.training)
-		return x.log_softmax(dim=-1)
-
-	def inference(self, x_all):
-		pbar = tqdm(total=x_all.size(0) * self.num_layers)
-		pbar.set_description('Evaluating')
-
-		# Compute representations of nodes layer by layer, using *all*
-		# available edges. This leads to faster computation in contrast to
-		# immediately computing the final representations of each batch.
-		for i in range(self.num_layers):
-			xs = []
-			for batch_size, n_id, adj in subgraph_loader:
-				edge_index, _, size = adj.to(device)
-				x = x_all[n_id].to(device)
-				x_target = x[:size[1]]
-				x = self.convs[i]((x, x_target), edge_index)
-				if i != self.num_layers - 1:
-					x = F.relu(x)
-				xs.append(x.cpu())
-
-				pbar.update(batch_size)
-
-			x_all = torch.cat(xs, dim=0)
-
-		pbar.close()
-
-		return x_all
-"""
+			for attention in self.conv:
+				x = F.dropout(x, p=self.dropout, training=self.training)
+				x = F.elu(attention(x, edge_index))
+			
+			x = F.dropout(x, p=self.dropout, training=self.training)
+			x = self.conv_out(x, edge_index)
+		
+			return F.log_softmax(x, dim=1)
