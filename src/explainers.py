@@ -6,6 +6,17 @@ import torch_geometric
 import torch
 import tqdm
 
+# GraphLIME
+from src.utils import k_hop_subgraph
+from torch_geometric.nn import MessagePassing
+from sklearn.linear_model import Ridge, LassoLars
+# import copy
+
+# from utils import 
+# import random
+# import matplotlib.pyplot as plt
+
+# from utils import prepare_data, extract_test_nodes, train, evaluate, plot_dist
 
 class GraphSHAP():
 
@@ -16,7 +27,7 @@ class GraphSHAP():
 		self.M = None # number of nonzero features - for each node index
 		self.neighbors = None
 
-	def explainer(self, node_index=0, hops=2, num_samples=10, info=True):
+	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
@@ -280,7 +291,7 @@ class Greedy:
 		self.neighbors = 0
 		self.M = None
 
-	def explainer(self, node_index=0, hops=2, num_samples=0, info=True):
+	def explain(self, node_index=0, hops=2, num_samples=0, info=True):
 		"""
 		Greedy explainer - only considers node features for explanations
 		Computes the prediction proba with and without the targeted feature (repeat for all feat)
@@ -322,20 +333,20 @@ class Random:
 		self.num_feats = num_feats
 		self.K = K
 
-	def explain_node(self):
+	def explain(self):
 		return np.random.choice(self.num_feats, self.K)
-
 
 
 class GraphLIME:
 	
-	def __init__(self, model, hop=2, rho=0.1, cached=True):
+	def __init__(self, data, model, hop=2, rho=0.1, cached=True):
+		self.data = data
 		self.model = model
 		self.hop = hop
 		self.rho = rho
 		self.cached = cached
 		self.cached_result = None
-
+		self.M = data.x.size(1)
 		self.model.eval()
 
 	def __flow__(self):
@@ -411,11 +422,15 @@ class GraphLIME:
 
 		return G
 		
-	def explain_node(self, node_idx, x, edge_index, **kwargs):
+	def explain(self, node_index, hops, num_samples, info=False, **kwargs):
+		# hops, num_samples, info are useless: just to copy graphshap pipeline
+		x = self.data.x
+		edge_index = self.data.edge_index
+
 		probas = self.__init_predict__(x, edge_index, **kwargs)
 
 		x, probas, _, _, _, _ = self.__subgraph__(
-			node_idx, x, probas, edge_index, **kwargs)
+			node_index, x, probas, edge_index, **kwargs)
 
 		x = x.detach().numpy()  # (n, d)
 		y = probas.detach().numpy()  # (n, classes)
@@ -423,15 +438,15 @@ class GraphLIME:
 		n, d = x.shape
 
 		K = self.__compute_kernel__(x, reduce=False)  # (n, n, d)
-		L = self.__compute_kernel__(y, reduce=True)  # (n, n, 1)
+		L = self.__compute_kernel__(y, reduce=False)  # (n, n, 1)
 
 		K_bar = self.__compute_gram_matrix__(K)  # (n, n, d)
 		L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
 
 		K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
-		L_bar = L_bar.reshape(n ** 2,)  # (n ** 2,)
+		L_bar = L_bar.reshape(n ** 2, 7)  # (n ** 2,)
 
 		solver = LassoLars(self.rho, fit_intercept=False, normalize=False, positive=True)
 		solver.fit(K_bar * n, L_bar * n)
 
-		return solver.coef_
+		return solver.coef_.T

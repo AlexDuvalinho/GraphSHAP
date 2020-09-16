@@ -1,4 +1,4 @@
-from src.explainers import GraphSHAP, Greedy
+from src.explainers import GraphSHAP, Greedy, Random, GraphLIME
 from src.data import add_noise_features, prepare_data, extract_test_nodes, add_noise_neighbors
 from src.utils import *
 from src.models import GCN, GAT
@@ -28,7 +28,7 @@ def filter_useless_features(args_model,
 	####### Input in script_eval file
 	args_dataset = 'Cora'
 	args_model = 'GCN'
-	args_explainers = ['GraphSHAP', 'Greedy']
+	args_explainers = ['GraphSHAP', 'Greedy', 'GraphLIME']
 	args_hops = 2
 	args_num_samples = 100 # size shap dataset
 	args_test_samples = 20 # number of test samples
@@ -65,8 +65,8 @@ def filter_useless_features(args_model,
 	# Select random subset of nodes to eval the explainer on. 
 	if not node_indices:
 		node_indices = extract_test_nodes(data, args_test_samples)
-
-	for explainer_name in args_explainers: 
+	
+	for c, explainer_name in enumerate(args_explainers): 
 
 		# Define explainer
 		explainer = eval(explainer_name)(data, model)
@@ -81,7 +81,7 @@ def filter_useless_features(args_model,
 		for node_idx in tqdm(node_indices, desc='explain node', leave=False):
 			
 			# Explanations via GraphSHAP
-			coefs = explainer.explainer(node_index= node_idx, 
+			coefs = explainer.explain(node_index= node_idx, 
 										hops=args_hops, 
 										num_samples=args_num_samples,
 										info=False)
@@ -136,11 +136,89 @@ def filter_useless_features(args_model,
 			print('------------------------------------')
 			# Plot of kernel density estimates of number of noisy features included in explanation
 			# Do for all benchmarks (with diff colors) and plt.show() to get on the same graph 
-		plot_dist(total_num_noise_feats, label=explainer_name, color='g')
+		
+		plot_dist(total_num_noise_feats, label=explainer_name, color=COLOURS[c])
 	
+	total_num_noise_feats = noise_feats_for_random(data, model, args_K, args_test_samples, node_indices)
+	plot_dist(total_num_noise_feats, label='Random', color='y')
+
 	plt.show()
 	return sum(total_num_noise_feats)
 
+
+
+def noise_feats_for_random(data, model, args_K, args_test_samples, node_indices):
+	"""
+	Code to output indexes of node features 
+	"""
+	
+	# Use Random explainer
+	explainer = Random(data.x.size(1), args_K)
+
+	# Loop on each test sample and store how many times do noise features appear among
+	# K most influential features in our explanations 
+	total_num_noise_feats = []
+
+	for node_idx in node_indices:
+		num_noise_feats = []
+		pred_class_num_noise_feats = []
+		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+
+		for i in range(data.num_classes):
+			# Store indexes of K most important features, for each class
+			feat_indices = explainer.explain()
+
+			# Number of noisy features that appear in explanations - use index to spot them
+			num_noise_feat = sum(idx < args_test_samples for idx in feat_indices)
+			num_noise_feats.append(num_noise_feat)
+
+			if i==predicted_class:
+				pred_class_num_noise_feats.append(num_noise_feat)
+		
+		# Return this number => number of times noisy features are provided as explanations
+		total_num_noise_feats.append(sum(num_noise_feats))
+	"""
+	noise_feats = []
+	# Do for each test sample
+	for node_idx in tqdm(range(args.test_samples), desc='explain node', leave=False):
+		feat_indices = explainer.explain() # store indices of features provided as explanations
+		noise_feat = (feat_indices >= INPUT_DIM[args.dataset]).sum() # check if they are noise features - not like this
+		noise_feats.append(noise_feat) 
+	"""
+	return total_num_noise_feats
+
+
+def noise_feats_for_graphlime(data, model, node_indices):
+	
+	# Use Random explainer
+	explainer = GraphLIME(model, hop=2, rho=0.1)
+
+	# Loop on each test sample and store how many times do noise features appear among
+	# K most influential features in our explanations 
+	total_num_noise_feats = []
+
+	for node_idx in tqdm(node_indices):
+		num_noise_feats = []
+		pred_class_num_noise_feats = []
+		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+
+		for i in range(data.num_classes):
+			# Store indexes of K most important features, for each class
+			feat_indices = explainer.explain()
+
+			# Number of noisy features that appear in explanations - use index to spot them
+			num_noise_feat = sum(idx < args_test_samples for idx in feat_indices)
+			num_noise_feats.append(num_noise_feat)
+
+			if i==predicted_class:
+				pred_class_num_noise_feats.append(num_noise_feat)
+		
+		# Return this number => number of times noisy features are provided as explanations
+		total_num_noise_feats.append(sum(num_noise_feats))
+
+
+
+###############################################################################
 
 
 
