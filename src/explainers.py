@@ -10,13 +10,11 @@ import tqdm
 from src.utils import k_hop_subgraph
 from torch_geometric.nn import MessagePassing
 from sklearn.linear_model import Ridge, LassoLars
-# import copy
 
-# from utils import 
-# import random
-# import matplotlib.pyplot as plt
+# GNNExplainer
+from torch_geometric.nn import GNNExplainer as GNNE
 
-# from utils import prepare_data, extract_test_nodes, train, evaluate, plot_dist
+
 
 class GraphSHAP():
 
@@ -281,6 +279,8 @@ class GraphSHAP():
 		print('Explanation for class {} are {}. They regard these features {} and these neighbours {}'\
 			.format(true_pred, phi[true_pred],feat_idx, neighbours))
 		
+		# Vizu nodes
+
 
 class Greedy:
 
@@ -450,3 +450,228 @@ class GraphLIME:
 		solver.fit(K_bar * n, L_bar * n)
 
 		return solver.coef_.T
+
+
+class LIME:
+
+	def __init__(self, data, model, cached=True):
+		self.data = data
+		self.model = model
+		self.cached = cached
+		self.cached_result = None
+		self.M = data.x.size(1)
+
+		self.model.eval()
+
+	def __init_predict__(self, x, edge_index, **kwargs):
+		if self.cached and self.cached_result is not None:
+			if x.size(0) != self.cached_result.size(0):
+				raise RuntimeError(
+					'Cached {} number of nodes, but found {}.'.format(
+						x.size(0), self.cached_result.size(0)))
+
+		if not self.cached or self.cached_result is None:
+			# Get the initial prediction.
+			with torch.no_grad():
+				log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
+				probas = log_logits.exp()
+
+			self.cached_result = probas
+
+		return self.cached_result
+
+	def explain(self, node_index, hops, num_samples, info=False, **kwargs):
+		x = self.data.x
+		edge_index = self.data.edge_index 
+
+		probas = self.__init_predict__(x, edge_index, **kwargs)
+		proba, label = probas[node_index, :].max(dim=0)
+		
+		x_ = deepcopy(x)
+		original_feats = x[node_index, :]
+
+		sample_x = [original_feats.detach().numpy()]
+		#sample_y = [proba.item()]
+		sample_y = [probas[node_index, :].detach().numpy()]
+		
+		for _ in range(num_samples):
+			x_[node_index, :] = original_feats + torch.randn_like(original_feats)
+			
+			with torch.no_grad():
+				log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+				probas_ = log_logits.exp()
+
+			#proba_ = probas_[node_index, label]
+			proba_ = probas_[node_index]
+
+			sample_x.append(x_[node_index, :].detach().numpy())
+			#sample_y.append(proba_.item())
+			sample_y.append(proba_.detach().numpy())
+
+		sample_x = np.array(sample_x)
+		sample_y = np.array(sample_y)
+
+		solver = Ridge(alpha=0.1)
+		solver.fit(sample_x, sample_y)
+
+		return solver.coef_.T
+
+
+
+class SHAP():
+
+	def __init__(self, data, model):
+		self.model = model
+		self.data = data
+		self.model.eval()
+		self.M = None # number of nonzero features - for each node index
+		self.neighbors = None
+
+	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
+		"""
+		:param node_index: index of the node of interest
+		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
+		:param num_samples: number of samples we want to form GraphSHAP's new dataset 
+		:return: shapley values for features that influence node v's pred
+		"""
+
+		### Determine z' => features and neighbours whose importance is investigated
+
+		# Create a variable to store node features 
+		x = self.data.x[node_index,:]
+
+		# Number of non-zero entries for the feature vector x_v
+		F = x[x!=0].shape[0]
+		# Store indexes of these non zero feature values
+		feat_idx = torch.nonzero(x)
+
+		# Total number of features + neighbours considered for node v
+		self.M = F
+
+		# Sample z' - binary vector of dimension (num_samples, M)
+		# F node features first, then D neighbors
+		z_ = torch.empty(num_samples, self.M).random_(2)
+		# Compute |z'| for each sample z'
+		s = (z_ != 0).sum(dim=1)
+
+
+		### Define weights associated with each sample using shapley kernel formula
+		weights = self.shapley_kernel(s)
+
+		###  Create dataset (z', f(z)), stored as (z_, fz)
+		# Retrive z from z' and x_v, then compute f(z)
+		fz = self.compute_pred(node_index, num_samples, F, z_, feat_idx)
+		
+		### OLS estimator for weighted linear regression
+		phi = self.OLS(z_, weights, fz) # dim (M*num_classes)
+
+		### Visualisation 
+		# Call visu function
+		# Pass it true_pred
+
+		return phi
+
+
+	def shapley_kernel(self, s):
+		"""
+		:param s: dimension of z' (number of features + neighbours included)
+		:return: [scalar] value of shapley value 
+		"""
+		shap_kernel = []
+		# Loop around elements of s in order to specify a special case
+		# Otherwise could have procedeed with tensor s direclty
+		for i in range(s.shape[0]):
+			a = s[i].item()
+			# Put an emphasis on samples where all or none features are included
+			if a == 0 or a == self.M: 
+				shap_kernel.append(1000)
+			elif scipy.special.binom(self.M,a) == float('+inf'):
+				shap_kernel.append(1)
+			else: 
+				shap_kernel.append((self.M-1)/(scipy.special.binom(self.M,a)*a*(self.M-a)))
+		return torch.tensor(shap_kernel)
+
+
+	def compute_pred(self, node_index, num_samples, F, z_, feat_idx):
+		"""
+		Variables are exactly as defined in explainer function, where compute_pred is used
+		This function aims to construct z (from z' and x_v) and then to compute f(z), 
+		meaning the prediction of the new instances with our original model. 
+		In fact, it builds the dataset (z', f(z)), required to train the weighted linear model.
+		:return fz: probability of belonging to each target classes, for all samples z
+		fz is of dimension N*C where N is num_samples and C num_classses. 
+		"""
+		# This implies retrieving z from z' - wrt sampled neighbours and node features
+		# We start this process here by storing new node features for v and neigbours to 
+		# isolate
+		X_v = torch.zeros([num_samples,self.data.num_features])
+
+		# Feature matrix
+		A = np.array(self.data.edge_index)
+		A = torch.tensor(A)
+
+		# Init label f(z) for graphshap dataset - consider all classes
+		fz = torch.zeros((num_samples, self.data.num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
+
+		# Do it for each sample
+		for i in range(num_samples):
+			
+			# Define new node features dataset (we only modify x_v for now)
+			# Features where z_j == 1 are kept, others are set to 0 
+			for j in range(F):
+				if z_[i,j].item()==1: 
+					X_v[i,feat_idx[j].item()]=1
+
+			# Change feature vector for node of interest 
+			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
+			X = deepcopy(self.data.x)
+			X[node_index,:] = X_v[i,:]
+
+			# Apply model on (X,A) as input. 
+			proba = self.model(x=X, edge_index=A).exp()[node_index]
+			
+			# Store final class prediction and confience level
+			# pred_confidence[i], classes_labels[i] = torch.topk(proba, k=1) # optional
+			# NOTE: maybe only consider predicted class for explanations
+
+			# Store predicted class label in fz 
+			fz[i] = proba
+
+		return fz
+
+
+	def OLS(self, z_, weights, fz):
+		"""
+		:param z_: z' - binary vector  
+		:param weights: shapley kernel weights for z'
+		:param fz: f(z) where z is a new instance - formed from z' and x
+		:return: estimated coefficients of our weighted linear regression - on (z', f(z))
+		phi is of dimension (M * num_classes)
+		"""
+		# OLS to estimate parameter of Weighted Linear Regression
+		try:
+			tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
+		except np.linalg.LinAlgError: # matrix not invertible
+			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_) 
+			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1]))) 
+		phi = np.dot(tmp, np.dot(np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
+
+		return phi
+
+
+class GNNExplainer():
+
+	def __init__(self, data, model):
+		self.data = data
+		self.model = model
+		self.M = data.x.size(1)
+		self.edge_mask = None
+
+	def explain(self, node_index, hops, num_samples, info=False):
+		explainer = GNNE(self.model, epochs=200)
+		node_feat_mask, self.edge_mask = explainer.explain_node(node_index, self.data.x, self.data.edge_index)
+	
+		return torch.stack([node_feat_mask]*7, 1)

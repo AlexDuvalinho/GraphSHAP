@@ -1,4 +1,4 @@
-COLOURS = ['g', 'b', 'r', 'p']
+COLOURS = ['g', 'b', 'r', 'c', 'm', 'k']
 
 
 INPUT_DIM = {'Cora': 1433,

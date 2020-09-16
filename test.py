@@ -1,4 +1,4 @@
-from src.explainers import GraphLIME
+from src.explainers import GraphLIME, SHAP
 from src.models import GCN, GAT
 import torch
 from src.utils import *
@@ -8,7 +8,7 @@ data = prepare_data('Cora', 10)
 hyperparam = ''.join(['hparams_','Cora','_', 'GCN'])
 param = ''.join(['params_','Cora','_', 'GCN'])
 model = GCN(input_dim=data.x.size(1), output_dim= data.num_classes, **eval(hyperparam) )
-explainer = GraphLIME(model, hop=2, rho=0.1)
+
 args_K = 5
 args_test_samples= 5
 
@@ -16,9 +16,14 @@ args_test_samples= 5
 node_indices = [1, 10, 20, 30, 40, 50]
 num_noise_feats = []
 #pred_class_num_noise_feats = []
-#true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
 node_idx = 1
 
+
+explainer = SHAP(data, model)
+coefs = explainer.explain(node_idx, data.x, data.edge_index)
+
+explainer = GraphLIME(model, hop=2, rho=0.1)
 coefs = explainer.explain(node_idx, data.x, data.edge_index) 
 
 feat_indices = coefs.argsort()[-args_K:]
@@ -29,3 +34,13 @@ num_noise_feats.append(num_noise_feat)
 
 #if i==predicted_class:
 #pred_class_num_noise_feats.append(num_noise_feat)
+
+
+from torch_geometric.nn import GNNExplainer
+explainer = GNNExplainer(model, epochs=200)
+node_idx = 10
+node_feat_mask, edge_mask = explainer.explain_node(node_idx, data.x, data.edge_index)
+
+# For nodes - use in GraphSHAP class to visualise important neighbours
+ax, G = explainer.visualize_subgraph(node_idx, data.edge_index, edge_mask, y=data.y)
+plt.show()

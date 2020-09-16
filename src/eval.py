@@ -1,4 +1,4 @@
-from src.explainers import GraphSHAP, Greedy, Random, GraphLIME
+from src.explainers import GraphSHAP, Greedy, Random, GraphLIME, LIME, SHAP, GNNExplainer
 from src.data import add_noise_features, prepare_data, extract_test_nodes, add_noise_neighbors
 from src.utils import *
 from src.models import GCN, GAT
@@ -89,8 +89,12 @@ def filter_useless_features(args_model,
 			# Check how many non zero features 
 			M.append(explainer.M)
 
-			# Number of non zero noisy features
-			num_non_zero_noise_feat = len([val for val in noise_feat[node_idx] if val != 0])
+			# Number of non zero noisy features 
+			# Dfferent for explainers with all features considered vs non zero features only (graphshap)
+			if explainer_name == 'GraphSHAP' or explainer_name == 'SHAP': # if explainer.M != data.x.size(1)
+				num_non_zero_noise_feat = len([val for val in noise_feat[node_idx] if val != 0])
+			else: 
+				num_non_zero_noise_feat = args_num_noise_feat
 
 			# Multilabel classification - consider all classes instead of focusing on the
 			# class that is predicted by our model 

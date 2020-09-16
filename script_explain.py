@@ -1,7 +1,7 @@
 # Use files in src folder
 import torch
 from src.data import prepare_data
-from src.explainers import GraphSHAP, Greedy, GraphLIME
+from src.explainers import GraphSHAP, Greedy, GraphLIME, LIME, SHAP, GNNExplainer
 import argparse
 
 
@@ -12,7 +12,7 @@ parser.add_argument("--model", type=str, default= 'GCN',
 							help= "Name of the GNN: GCN or GAT")
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--explainer", type=str, default= 'GraphLIME',
+parser.add_argument("--explainer", type=str, default= 'GNNExplainer',
 							help= "Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
 parser.add_argument("--seed", type=int, default=10)
 parser.add_argument("--node_index", type=int, default=0,
@@ -40,3 +40,4 @@ explanations = explainer.explain(node_index=args.node_index,
 									num_samples=args.num_samples)
 
 print(explanations.shape)
+print(explanations[1].max())
