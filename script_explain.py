@@ -12,7 +12,7 @@ parser.add_argument("--model", type=str, default= 'GCN',
 							help= "Name of the GNN: GCN or GAT")
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--explainer", type=str, default= 'GNNExplainer',
+parser.add_argument("--explainer", type=str, default= 'GraphSHAP',
 							help= "Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
 parser.add_argument("--seed", type=int, default=10)
 parser.add_argument("--node_index", type=int, default=0,

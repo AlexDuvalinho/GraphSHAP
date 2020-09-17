@@ -5,9 +5,11 @@ from copy import deepcopy
 import torch_geometric
 import torch
 import tqdm
+import matplotlib.pyplot as plt
 
 # GraphLIME
 from src.utils import k_hop_subgraph
+from src.plots import visualize_subgraph
 from torch_geometric.nn import MessagePassing
 from sklearn.linear_model import Ridge, LassoLars
 
@@ -44,7 +46,7 @@ class GraphSHAP():
 		feat_idx = torch.nonzero(x)
 
 		# Construct k hop subgraph of node of interest (denoted v)
-		neighbours, _, _, _ =\
+		neighbours, _, _, edge_mask =\
 			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
 												num_hops=hops, 
 												edge_index= self.data.edge_index)
@@ -63,7 +65,9 @@ class GraphSHAP():
 		z_ = torch.empty(num_samples, self.M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
-
+		
+		# Compute true prediction of model, for original instance
+		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
 
 		### Define weights associated with each sample using shapley kernel formula
 		weights = self.shapley_kernel(s)
@@ -80,8 +84,7 @@ class GraphSHAP():
 			self.print_info(F, D, node_index, phi, feat_idx, neighbours)
 
 		### Visualisation 
-		# Call visu function
-		# Pass it true_pred
+			self.vizu(edge_mask, node_index, neighbours, phi, true_pred, hops)
 
 		return phi
 
@@ -263,7 +266,7 @@ class GraphSHAP():
 			
 
 
-	def vizu(self, true_pred, phi, feat_idx, neighbours):
+	def vizu(self, edge_mask, node_index, neighbours, phi, predicted_class, hops):
 		"""
 		:param true_pred: class predicted by original model for node of interest
 		:param phi: shapley values
@@ -272,15 +275,41 @@ class GraphSHAP():
 		:return: nice visualisation (like SHAP) of each feature/neigbour's average
 		marginal contribution towards the prediction 
 		"""
-		# Explanations (phi) is of the form - tensor of dim (M*C)
-
-		# Explanation for this class - TODO: improve => print in for loop item next to influence
-		# Even do vizualisation of result like SHAPE does
-		print('Explanation for class {} are {}. They regard these features {} and these neighbours {}'\
-			.format(true_pred, phi[true_pred],feat_idx, neighbours))
+		# Replace False by 0, True by 1
+		mask = torch.zeros(self.data.edge_index.shape[1])
+		for i, val in enumerate(edge_mask):
+			if val.item()==True:
+				mask[i]=1
+				
+		# Attribute phi to edges in subgraph bsed on the incident node phi value
+		for i, nei in enumerate(neighbours): 
+			list_indexes = (self.data.edge_index[0,:]==nei).nonzero()
+			for idx in list_indexes: 
+				if self.data.edge_index[1,idx]==0:
+					mask[idx] = phi[self.M - len(neighbours) + i, predicted_class] 
+					break
+				elif mask[idx]==1:
+					mask[idx] = phi[self.M - len(neighbours) + i, predicted_class] 
+			#mask[mask.nonzero()[i].item()]=phi[i, predicted_class]
 		
-		# Vizu nodes
+		# Set to 0 importance of edges related to 0 
+		mask[mask==1]=0
 
+		# Increase coef for visibility and consider absolute contribution
+		mask = torch.abs(mask)*2
+
+		# Vizu nodes and 
+		ax, G = visualize_subgraph(self.model, 
+									node_index, 
+									self.data.edge_index, 
+									mask, 
+									hops, 
+									y=self.data.y, 
+									threshold=None)
+		plt.show()
+		
+
+		
 
 class Greedy:
 

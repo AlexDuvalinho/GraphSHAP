@@ -5,6 +5,7 @@ from copy import copy
 from math import sqrt
 import torch
 import networkx as nx
+from torch_geometric.nn import MessagePassing
 from torch_geometric.data import Data
 from torch_geometric.utils import k_hop_subgraph, to_networkx
 
@@ -30,8 +31,13 @@ def plot_dist(noise_feats, label=None, ymax=1.0, color=None, title=None, save_pa
 
 	return ax
 
+def __flow__(model):
+	for module in model.modules():
+		if isinstance(module, MessagePassing):
+			return module.flow
+	return 'source_to_target'
 
-def visualize_subgraph(self, node_idx, edge_index, edge_mask, y=None,
+def visualize_subgraph(model, node_idx, edge_index, edge_mask, num_hops, y=None,
 						   threshold=None, **kwargs):
 		"""Visualizes the subgraph around :attr:`node_idx` given an edge mask
 		:attr:`edge_mask`.
@@ -56,8 +62,8 @@ def visualize_subgraph(self, node_idx, edge_index, edge_mask, y=None,
 
 		# Only operate on a k-hop subgraph around `node_idx`.
 		subset, edge_index, _, hard_edge_mask = k_hop_subgraph(
-			node_idx, self.num_hops, edge_index, relabel_nodes=True,
-			num_nodes=None, flow=self.__flow__())
+			node_idx, num_hops, edge_index, relabel_nodes=True,
+			num_nodes=None, flow=__flow__(model))
 
 		edge_mask = edge_mask[hard_edge_mask]
 
