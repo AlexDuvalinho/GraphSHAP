@@ -307,9 +307,7 @@ class GraphSHAP():
 									y=self.data.y, 
 									threshold=None)
 		plt.show()
-		
 
-		
 
 class Greedy:
 
@@ -354,7 +352,53 @@ class Greedy:
 			coef_pred_class[i] = (torch.abs(pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
 
 		return coefs #, coef_pred_class
+	
+	def explain_nei(self, node_index=0, hops=2, num_samples=0, info=True):
+				# Create a variable to store node features 
+		x = self.data.x[node_index,:]
 
+		# Construct k hop subgraph of node of interest (denoted v)
+		neighbours, _, _, edge_mask =\
+			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
+												num_hops=hops, 
+												edge_index= self.data.edge_index)
+		# Store the indexes of the neighbours of v (+ index of v itself)
+
+		# Remove node v index from neighbours and store their number in D
+		neighbours = neighbours[neighbours!=node_index]
+		self.neighbors = neighbours
+		self.M = neighbours.shape[0] 
+
+		### Compute predictions
+		self.model.eval()		
+		probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index]
+		pred_confidence, label = torch.topk(probas, k=1) 
+		
+		# Init explanations vector
+		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
+		coef_pred_class = np.zeros(self.data.x.size(1))
+
+		# Loop on all features - consider all classes
+		for i, nei_idx in enumerate(neighbours):
+			nei_idx = nei_idx.item()
+			A_ = deepcopy(self.data.edge_index)
+
+			# Find all edges incident to the isolated neighbour
+			pos = (self.data.edge_index==nei_idx).nonzero()[:,1].tolist()
+			
+			# Create new adjacency matrix where this neighbour is isolated
+			A_ = np.array(self.data.edge_index)
+			A_ = np.delete(A_, pos, axis=1)
+			A_ = torch.tensor(A_)
+
+			# Compute new prediction with updated adj matrix (without this neighbour)
+			probas_ = self.model(x=self.data.x, edge_index=A_ ).exp()[node_index] # [label].item()
+			
+			# Compute explanations with the following formula
+			coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
+			coef_pred_class[i] = (torch.abs(pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
+
+		return coefs
 
 class Random:
 
@@ -546,7 +590,6 @@ class LIME:
 		return solver.coef_.T
 
 
-
 class SHAP():
 
 	def __init__(self, data, model):
@@ -696,11 +739,26 @@ class GNNExplainer():
 	def __init__(self, data, model):
 		self.data = data
 		self.model = model
-		self.M = data.x.size(1)
-		self.edge_mask = None
+		self.M = data.x.size(0)
+		self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
+		self.neighbors = []
 
 	def explain(self, node_index, hops, num_samples, info=False):
 		explainer = GNNE(self.model, epochs=200)
-		node_feat_mask, self.edge_mask = explainer.explain_node(node_index, self.data.x, self.data.edge_index)
-	
-		return torch.stack([node_feat_mask]*7, 1)
+		node_feat_mask, edge_mask = explainer.explain_node(node_index, self.data.x, self.data.edge_index)
+
+		# Transfer edge importance to node importance 
+		dico = {}
+		for idx in torch.nonzero(edge_mask):
+			node = self.data.edge_index[0,idx].item()
+			if not node in dico.keys():
+				dico[node]=[edge_mask[idx]]
+			else: 
+				dico[node].append(edge_mask[idx])
+		# Count neighbours in the subgraph
+		self.neighbors = [index for index in dico.keys()]
+		# Attribute an importance measure to each node = sum of incident edges' importance
+		for key, val in dico.items():
+			self.coefs[key,:] = sum(val) 
+
+		return torch.stack([node_feat_mask]*self.data.num_classes, 1)

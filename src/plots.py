@@ -10,7 +10,7 @@ from torch_geometric.data import Data
 from torch_geometric.utils import k_hop_subgraph, to_networkx
 
 
-def plot_dist(noise_feats, label=None, ymax=1.0, color=None, title=None, save_path=None):
+def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_path=None):
 	"""
 	Kernel density plot of the number of noisy features included in explanations, 
 	for a certain number of test samples

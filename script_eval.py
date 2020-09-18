@@ -13,7 +13,9 @@ parser.add_argument("--model", type=str, default= 'GAT',
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
 parser.add_argument("--explainers", type=list, default= ['GNNExplainer'],
-							help= "Name of the explainers compared among LIME, GraphLIME, SHAP, Greedy, ...")
+							help= "Name of the benchmarked explainers among LIME, GraphLIME, SHAP, Greedy and GNNExplainer")
+parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP, Greedy, GNNExplainer'],
+							help= "Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
 parser.add_argument("--hops", type=int, default=2,
 							help= 'k of k-hops neighbours considered for the node of interest')
 parser.add_argument("--num_samples", type=int, default=100,
@@ -42,7 +44,7 @@ args = parser.parse_args()
 node_indices = None
 torch.manual_seed(10)
 
-
+"""
 # Node features
 noisy_feat_included = filter_useless_features(args.model,
 											args.dataset,
@@ -56,11 +58,12 @@ noisy_feat_included = filter_useless_features(args.model,
 											args.binary,
 											node_indices,
 											info=True)
-
 """
+
 # Neighbours
 noisy_nei_included = filter_useless_nodes(args.model,
 										args.dataset,
+										args.node_explainers,
 										args.hops,
 										args.num_samples,
 										args.test_samples, 
@@ -71,4 +74,3 @@ noisy_nei_included = filter_useless_nodes(args.model,
 										args.connectedness,
 										node_indices,
 										info=True)
-"""
