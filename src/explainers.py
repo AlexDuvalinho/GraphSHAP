@@ -26,6 +26,7 @@ class GraphSHAP():
 		self.model.eval()
 		self.M = None # number of nonzero features - for each node index
 		self.neighbors = None
+		self.F = None 
 
 	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
 		"""
@@ -41,7 +42,7 @@ class GraphSHAP():
 		x = self.data.x[node_index,:]
 
 		# Number of non-zero entries for the feature vector x_v
-		F = x[x!=0].shape[0]
+		self.F = x[x!=0].shape[0]
 		# Store indexes of these non zero feature values
 		feat_idx = torch.nonzero(x)
 
@@ -53,12 +54,11 @@ class GraphSHAP():
 		# Store the indexes of the neighbours of v (+ index of v itself)
 
 		# Remove node v index from neighbours and store their number in D
-		neighbours = neighbours[neighbours!=node_index]
-		self.neighbors = neighbours
-		D = neighbours.shape[0] 
+		self.neighbors = neighbours[neighbours!=node_index]
+		D = self.neighbors.shape[0] 
 
 		# Total number of features + neighbours considered for node v
-		self.M = F+D
+		self.M = self.F+D
 
 		# Sample z' - binary vector of dimension (num_samples, M)
 		# F node features first, then D neighbors
@@ -74,17 +74,17 @@ class GraphSHAP():
 
 		###  Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, num_samples, F, D, z_, neighbours, feat_idx)
+		fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx)
 		
 		### OLS estimator for weighted linear regression
 		phi = self.OLS(z_, weights, fz) # dim (M*num_classes)
 		
 		### Print some information 
 		if info:
-			self.print_info(F, D, node_index, phi, feat_idx, neighbours)
+			self.print_info(D, node_index, phi, feat_idx)
 
 		### Visualisation 
-			self.vizu(edge_mask, node_index, neighbours, phi, true_pred, hops)
+			self.vizu(edge_mask, node_index, phi, true_pred, hops)
 
 		return phi
 
@@ -109,7 +109,7 @@ class GraphSHAP():
 		return torch.tensor(shap_kernel)
 
 
-	def compute_pred(self, node_index, num_samples, F, D, z_, neighbours, feat_idx):
+	def compute_pred(self, node_index, num_samples, D, z_, feat_idx):
 		"""
 		Variables are exactly as defined in explainer function, where compute_pred is used
 		This function aims to construct z (from z' and x_v) and then to compute f(z), 
@@ -129,7 +129,7 @@ class GraphSHAP():
 			
 			# Define new node features dataset (we only modify x_v for now)
 			# Features where z_j == 1 are kept, others are set to 0 
-			for j in range(F):
+			for j in range(self.F):
 				if z_[i,j].item()==1: 
 					X_v[i,feat_idx[j].item()]=1
 
@@ -137,8 +137,8 @@ class GraphSHAP():
 			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
 			nodes_id = []
 			for j in range(D):
-				if z_[i,F+j]==0:
-					node_id = neighbours[j].item()
+				if z_[i,self.F+j]==0:
+					node_id = self.neighbors[j].item()
 					nodes_id.append(node_id)
 			# Dico with key = num_sample id, value = excluded neighbour index
 			excluded_nei[i] = nodes_id
@@ -200,14 +200,14 @@ class GraphSHAP():
 		return phi
 
 
-	def print_info(self, F, D, node_index, phi, feat_idx, neighbour):
+	def print_info(self, D, node_index, phi, feat_idx):
 		"""
 		Displays some information about explanations - for a better comprehension and audit
 		"""
 
 		# Print some information
 		print('Explanations include {} node features and {} neighbours for this node\
-		for {} classes'.format(F, D, self.data.num_classes))
+		for {} classes'.format(self.F, D, self.data.num_classes))
 		
 		# Compare with true prediction of the model - see what class should truly be explained
 		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
@@ -233,13 +233,13 @@ class GraphSHAP():
 		# Alternative is to view a class at random or the second best class 
 
 		# Select most influential neighbors and/or features (+ or -)
-		if F + D > 10: 
+		if self.F + D > 10: 
 			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation)), 6)
 			vals = [pred_explanation[idx] for idx in idxs]
 			influential_feat = {}
 			influential_nei = {}
 			for idx, val in zip(idxs, vals): 
-				if idx.item() < F: 
+				if idx.item() < self.F: 
 					influential_feat[feat_idx[idx]] = val
 				else: 
 					influential_nei[neighbour[idx-F]] = val
@@ -247,7 +247,7 @@ class GraphSHAP():
 			'and neighbours', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())])
 
 		# Most influential features splitted bewteen neighbours and features
-		if F > 5:
+		if self.F > 5:
 			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[:F])), 3)
 			vals = [pred_explanation[idx] for idx in idxs]
 			influential_feat = {}
@@ -266,7 +266,7 @@ class GraphSHAP():
 			
 
 
-	def vizu(self, edge_mask, node_index, neighbours, phi, predicted_class, hops):
+	def vizu(self, edge_mask, node_index, phi, predicted_class, hops):
 		"""
 		:param true_pred: class predicted by original model for node of interest
 		:param phi: shapley values
@@ -282,14 +282,14 @@ class GraphSHAP():
 				mask[i]=1
 				
 		# Attribute phi to edges in subgraph bsed on the incident node phi value
-		for i, nei in enumerate(neighbours): 
+		for i, nei in enumerate(self.neighbors): 
 			list_indexes = (self.data.edge_index[0,:]==nei).nonzero()
 			for idx in list_indexes: 
 				if self.data.edge_index[1,idx]==0:
-					mask[idx] = phi[self.M - len(neighbours) + i, predicted_class] 
+					mask[idx] = phi[self.M - len(self.neighbors) + i, predicted_class] 
 					break
 				elif mask[idx]==1:
-					mask[idx] = phi[self.M - len(neighbours) + i, predicted_class] 
+					mask[idx] = phi[self.M - len(self.neighbors) + i, predicted_class] 
 			#mask[mask.nonzero()[i].item()]=phi[i, predicted_class]
 		
 		# Set to 0 importance of edges related to 0 
@@ -315,8 +315,9 @@ class Greedy:
 		self.model = model
 		self.data = data
 		self.model.eval()
-		self.neighbors = 0
+		self.neighbors = None
 		self.M = None
+		self.F = None 
 
 	def explain(self, node_index=0, hops=2, num_samples=0, info=True):
 		"""
@@ -329,6 +330,7 @@ class Greedy:
 		x = self.data.x[node_index,:]
 		# Number of non-zero entries for the feature vector x_v
 		self.M = x[x!=0].shape[0]
+		self.F = self.M
 		# Store indexes of these non zero feature values
 		feat_indexes = x.nonzero()
 
@@ -379,7 +381,7 @@ class Greedy:
 		coef_pred_class = np.zeros(self.data.x.size(1))
 
 		# Loop on all features - consider all classes
-		for i, nei_idx in enumerate(neighbours):
+		for i, nei_idx in enumerate(self.neighbors):
 			nei_idx = nei_idx.item()
 			A_ = deepcopy(self.data.edge_index)
 
@@ -420,6 +422,7 @@ class GraphLIME:
 		self.cached = cached
 		self.cached_result = None
 		self.M = data.x.size(1)
+		self.F = self.M 
 		self.model.eval()
 
 	def __flow__(self):
@@ -533,6 +536,7 @@ class LIME:
 		self.cached = cached
 		self.cached_result = None
 		self.M = data.x.size(1)
+		self.F = data.x.size(1)
 
 		self.model.eval()
 
@@ -598,6 +602,7 @@ class SHAP():
 		self.model.eval()
 		self.M = None # number of nonzero features - for each node index
 		self.neighbors = None
+		self.F = None
 
 	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
 		"""
@@ -614,6 +619,7 @@ class SHAP():
 
 		# Number of non-zero entries for the feature vector x_v
 		F = x[x!=0].shape[0]
+		self.F=F
 		# Store indexes of these non zero feature values
 		feat_idx = torch.nonzero(x)
 
@@ -739,9 +745,11 @@ class GNNExplainer():
 	def __init__(self, data, model):
 		self.data = data
 		self.model = model
-		self.M = data.x.size(0)
-		self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
-		self.neighbors = []
+		self.M = data.x.size(0) + data.x.size(1)
+		# self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
+		self.coefs = None
+		self.neighbors = None
+		self.F = data.x.size(1)
 
 	def explain(self, node_index, hops, num_samples, info=False):
 		explainer = GNNE(self.model, epochs=200)
@@ -756,9 +764,12 @@ class GNNExplainer():
 			else: 
 				dico[node].append(edge_mask[idx])
 		# Count neighbours in the subgraph
-		self.neighbors = [index for index in dico.keys()]
+		self.neighbors = torch.tensor([index for index in dico.keys()])
 		# Attribute an importance measure to each node = sum of incident edges' importance
-		for key, val in dico.items():
-			self.coefs[key,:] = sum(val) 
+		self.coefs = torch.zeros(self.neighbors.shape[0], self.data.num_classes)
+		#for key, val in dico.items(): 
+		for i, val in enumerate(dico.values()):
+			#self.coefs[key,:] = sum(val) 
+			self.coefs[i,:]=sum(val)
 
 		return torch.stack([node_feat_mask]*self.data.num_classes, 1)

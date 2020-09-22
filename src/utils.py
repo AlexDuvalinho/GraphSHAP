@@ -41,7 +41,7 @@ hparams_Cora_GAT = {
 		}
 
 params_Cora_GAT = {
-	'num_epochs':100,
+	'num_epochs':75,
 	'lr':0.005, 
 	'wd':5e-4
 	}

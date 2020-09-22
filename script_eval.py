@@ -12,9 +12,9 @@ parser.add_argument("--model", type=str, default= 'GAT',
 							help= "Name of the GNN: GCN or GAT")
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--explainers", type=list, default= ['GNNExplainer'],
-							help= "Name of the benchmarked explainers among LIME, GraphLIME, SHAP, Greedy and GNNExplainer")
-parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP, Greedy, GNNExplainer'],
+parser.add_argument("--explainers", type=list, default= ['GraphSHAP', 'SHAP', 'Greedy', 'GNNExplainer', 'LIME', 'GraphLIME'],
+							help= "Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
+parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP', 'Greedy', 'GNNExplainer'],
 							help= "Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
 parser.add_argument("--hops", type=int, default=2,
 							help= 'k of k-hops neighbours considered for the node of interest')
@@ -34,6 +34,8 @@ parser.add_argument("--binary", type=bool, default=True,
 							help= 'if noisy features are binary or not')
 parser.add_argument("--connectedness", type=str, default='low',
 							help= 'how connected are the noisy nodes we define: low, high or medium')
+parser.add_argument("--multiclass", type=bool, default=False,
+							help= 'False if we consider explanations for the predicted class only')		
 args = parser.parse_args()
 
 
@@ -43,7 +45,6 @@ args = parser.parse_args()
 #node_indices = [1834,2512,2591,2101,1848,1853,2326,1987,2359,2453,2230,2267,2399, 2150,2400]
 node_indices = None
 torch.manual_seed(10)
-
 """
 # Node features
 noisy_feat_included = filter_useless_features(args.model,
@@ -57,6 +58,7 @@ noisy_feat_included = filter_useless_features(args.model,
 											args.p,
 											args.binary,
 											node_indices,
+											args.multiclass,
 											info=True)
 """
 
@@ -73,4 +75,5 @@ noisy_nei_included = filter_useless_nodes(args.model,
 										args.binary,
 										args.connectedness,
 										node_indices,
+										args.multiclass,
 										info=True)

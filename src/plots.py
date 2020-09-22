@@ -16,7 +16,7 @@ def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_pa
 	for a certain number of test samples
 	"""
 	if not any(noise_feats): # handle special case where noise_feats=0 
-		noise_feats[0]=1
+		noise_feats[0]=0.5
 
 	sns.set_style('darkgrid')
 	ax = sns.distplot(noise_feats, hist=False, kde=True, kde_kws={'label': label}, color=color)
