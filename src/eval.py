@@ -5,7 +5,7 @@ from src.models import GCN, GAT
 from src.train import *
 from src.plots import plot_dist
 import matplotlib.pyplot as plt
-
+import src.gengraph
 
 def filter_useless_features(args_model,
 							args_dataset,
@@ -201,9 +201,7 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 
 
 
-
 ###############################################################################
-
 
 
 
@@ -357,8 +355,8 @@ def filter_useless_nodes(args_model,
 				num_noise_neis.append(num_noise_nei)
 
 				if i==predicted_class:
-					nei_indices = coefs[:,i].argsort()[-args_K:].tolist()  
-					num_noise_nei = sum(idx >= (explainer.neighbors.shape[0] - num_noisy_nodes) for idx in nei_indices)
+					#nei_indices = coefs[:,i].argsort()[-args_K:].tolist()  
+					#num_noise_nei = sum(idx >= (explainer.neighbors.shape[0] - num_noisy_nodes) for idx in nei_indices)
 					pred_class_num_noise_neis.append(num_noise_nei)
 			
 			# Return this number => number of times noisy neighbours are provided as explanations
@@ -397,7 +395,6 @@ def filter_useless_nodes(args_model,
 
 	plt.show()
 	return total_num_noise_neis
-
 
 
 
@@ -440,3 +437,95 @@ def noise_nodes_for_random(data, model, args_K, args_num_noise_nodes, node_indic
 	#	noise_feats.append(noise_feat) 
 	return total_num_noise_neis
 
+
+############################################################################
+
+
+def eval_shap(args_dataset, 
+				args_model, 
+				args_test_samples, 
+				args_hops, 
+				args_K,
+				args_num_samples,
+				node_indices=None):
+	"""
+	Compares SHAP and GraphSHAP on graph based datasets
+	Check if they agree on features'contribution towards prediction for several test samples
+	"""
+
+	# Define dataset 
+	data = prepare_data(args_dataset, seed=10)
+
+	# Select a random subset of nodes to eval the explainer on. 
+	if not node_indices:
+		node_indices = extract_test_nodes(data, args_test_samples)
+	
+	# Define training parameters depending on (model-dataset) couple
+	hyperparam = ''.join(['hparams_',args_dataset,'_', args_model])
+	param = ''.join(['params_',args_dataset,'_', args_model])
+
+	# Define the model
+	if args_model == 'GCN':
+		model = GCN(input_dim=data.x.size(1), output_dim=data.num_classes, **eval(hyperparam) )
+	else:
+		model = GAT(input_dim=data.x.size(1), output_dim=data.num_classes, **eval(hyperparam) )
+
+	# Re-train the model on dataset with noisy features 
+	train_and_val(model, data, **eval(param))
+
+	# Store metrics
+	iou = []
+	prop_contrib_diff = []
+
+	# Iterate over test samples
+	for node_idx in tqdm(node_indices, desc='explain node', leave=False):
+		
+		# Define explainers we would like to compare
+		graphshap = GraphSHAP(data, model)
+		shap = SHAP(data, model)
+
+		# Explanations via GraphSHAP
+		graphshap_coefs = graphshap.explain(node_index= node_idx, 
+									hops=args_hops, 
+									num_samples=args_num_samples,
+									info=False)
+		
+		shap_coefs = shap.explain(node_index= node_idx, 
+									hops=args_hops, 
+									num_samples=args_num_samples,
+									info=False)
+		
+
+		# Consider node features only - for predicted class only
+		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[node_idx].max(dim=0)
+		graphshap_coefs = graphshap_coefs[:graphshap.F, predicted_class]
+		shap_coefs = shap_coefs[:, predicted_class]
+
+		# Need to apply regularisation
+
+		# Proportional contribution
+		prop_contrib_diff.append( np.abs(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() - shap_coefs.sum() / np.abs(shap_coefs).sum()) ) 
+		#print('GraphSHAP proportional contribution to pred: {:.2f}'.format(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() ))
+		#print('SHAP proportional contribution to pred: {:.2f}'.format(shap_coefs.sum() / np.abs(shap_coefs).sum() ))
+
+		# Important features
+		graphshap_feat_indices = np.abs(graphshap_coefs).argsort()[-args_K:].tolist()  
+		shap_feat_indices = np.abs(shap_coefs).argsort()[-args_K:].tolist() 
+		iou.append( len(set(graphshap_feat_indices).intersection(set(shap_feat_indices))) / len(set(graphshap_feat_indices).union(set(shap_feat_indices))) )
+		#print('Iou important features: ', iou)
+
+	print('iou av:', np.mean(iou))
+	print('difference in contibutions towards pred: ', np.mean(prop_contrib_diff))
+
+
+############################################################################
+
+def eval_gnne():
+	"""
+	Evaluate GraphSHAP on GNNExplainer synthetic datasets 
+	"""
+
+	data = gengraph.preprocess_input_graph(G, labels)
+
+
+	
