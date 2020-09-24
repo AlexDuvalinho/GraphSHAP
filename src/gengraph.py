@@ -17,6 +17,7 @@ import networkx as nx
 import numpy as np
 
 from tensorboardX import SummaryWriter
+import torch
 
 from utils import synthetic_structsim
 from utils import featgen
@@ -79,22 +80,30 @@ def preprocess_input_graph(G, labels, normalize_adj=False):
 	Returns:
 		A dictionary containing adjacency, node features and labels
 	"""
+	# Define adj matrix 
 	adj = np.array(nx.to_numpy_matrix(G))
 	if normalize_adj:
 		sqrt_deg = np.diag(1.0 / np.sqrt(np.sum(adj, axis=0, dtype=float).squeeze()))
 		adj = np.matmul(np.matmul(sqrt_deg, adj), sqrt_deg)
+	
+	ajd = torch.tensor(adj, dtype=torch.int64)[0]
+	edge_index = torch.tensor([[],[]], dtype=torch.int64)
+	for i, row in enumerate(adj):
+		for j, entry in enumerate(row): 
+			if entry != 0:
+				edge_index = torch.cat((edge_index,torch.tensor([[torch.tensor(i, dtype=torch.int64)],[torch.tensor(j, dtype=torch.int64)]],  dtype=torch.int64)),dim=1)
 
+	# Define features 
 	existing_node = list(G.nodes)[-1]
 	feat_dim = G.nodes[existing_node]["feat"].shape[0]
-	f = np.zeros((G.number_of_nodes(), feat_dim), dtype=float)
+	f = torch.zeros(G.number_of_nodes(), feat_dim)
 	for i, u in enumerate(G.nodes()):
-		f[i, :] = G.nodes[u]["feat"]
+		f[i, :] = torch.tensor(G.nodes[u]["feat"])
 
-	# add batch dim
-	adj = np.expand_dims(adj, axis=0)
-	f = np.expand_dims(f, axis=0)
-	labels = np.expand_dims(labels, axis=0)
-	return {"adj": adj, "feat": f, "labels": labels}
+	# Define labels
+	labels = torch.tensor(labels)
+
+	return f, edge_index, labels
 
 
 ####################################

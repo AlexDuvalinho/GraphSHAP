@@ -27,7 +27,6 @@ args = parser.parse_args()
 # Load the dataset
 data = prepare_data(args.dataset, args.seed)
 
-
 # Load the model 
 model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
 model = torch.load(model_path)
@@ -41,3 +40,9 @@ explanations = explainer.explain(node_index=args.node_index,
 
 print(explanations.shape)
 print(explanations[1].max())
+
+
+
+data = prepare_data('syn1', 10)
+
+data = torch.load(data_path)

@@ -46,14 +46,15 @@ def prepare_data(dataset, seed):
 		data.num_classes = data.graphs[0].y.size(1)
 		for df in data.graphs: 
 			df.num_classes = data.num_classes
-		
+	
+	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']:
+		data = synthetic_data(dataset, dirname, args_input_dim = 10, args_train_ratio = 0.6)
+	
 	#elif dataset = 'MUTAG'
 
 	# Get it in right format
 	if dataset != 'PPI':
 		print('Train mask is of size: ', data.train_mask[data.train_mask==True].shape)
-	
-    # data = add_noise_features(data, args.num_noise)
 	
 	return data
 
@@ -166,7 +167,7 @@ def add_noise_features(data, num_noise, binary=False, p=0.5):
 	return data, noise_feat
 
 
-def add_noise_neighbors(data, num_noise, node_indices, binary=False, p=0.5, connectedness='high'):
+def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, connectedness='high'):
 	"""
 	:param data: downloaded dataset 
 	:param num_noise: number of noise features we want to add
@@ -251,3 +252,53 @@ def extract_test_nodes(data, num_samples):
 	node_indices = np.random.choice(test_indices, num_samples).tolist()
 	
 	return node_indices
+
+# Files required 
+from src.train import train_and_val
+import src.gengraph as gengraph
+import utils.io_utils as io_utils
+import utils.parser_utils as parser_utils
+import utils.featgen as featgen
+import configs
+
+
+def synthetic_data(dataset, dirname, args_input_dim = 10, args_train_ratio = 0.6):
+	"""
+	Create synthetic data, similarly to what was done in GNNExplainer
+	Pipeline was adapted so as to fit ours. 
+	"""
+	# Define path where dataset should be saved 
+	data_path = "data/{}.pth".format(dataset)
+
+	# If already created, do not recreate 
+	if os.path.exists(data_path):
+		data = torch.load(data_path)
+
+	else:
+		# Construct graph
+		if dataset =='syn1':	
+			G, labels, name = gengraph.gen_syn1( feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim)) )
+		elif dataset =='syn4':
+			G, labels, name = gengraph.gen_syn4( feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)) )
+		elif dataset == 'syn5':
+			G, labels, name = gengraph.gen_syn5( feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)) )
+		elif dataset =='syn2':
+			G, labels, name = gengraph.gen_syn2()
+			args_input_dim = len(G.nodes[0]["feat"])
+
+		# Create dataset
+		data = SimpleNamespace()
+		data.x, data.edge_index, data.y = gengraph.preprocess_input_graph(G, labels)
+		a = torch.randperm(data.x.size()[0])
+		data.y, data.x = data.y[a], data.x[a,:]
+		data.num_classes = max(labels) + 1
+		data.num_features = args_input_dim
+		data.num_nodes = G.number_of_nodes()
+			
+		# Train/test split only for nodes
+		data.train_mask, data.val_mask, data.test_mask = split_function(data.y.numpy())
+
+		# Save data
+		torch.save(data, data_path)
+
+	return data 

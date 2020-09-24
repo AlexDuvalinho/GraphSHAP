@@ -1,5 +1,5 @@
 from src.explainers import GraphSHAP, Greedy, Random, GraphLIME, LIME, SHAP, GNNExplainer
-from src.data import add_noise_features, prepare_data, extract_test_nodes, add_noise_neighbors
+from src.data import add_noise_features, prepare_data, extract_test_nodes, add_noise_neighbours
 from src.utils import *
 from src.models import GCN, GAT
 from src.train import *
@@ -247,7 +247,7 @@ def filter_useless_nodes(args_model,
 		node_indices = extract_test_nodes(data, args_test_samples)
 
 	# Add noisy neighbours to the graph, with random features
-	data = add_noise_neighbors(data, args_num_noise_nodes, node_indices, binary=args_binary, p=args_p, connectedness=args_connectedness)
+	data = add_noise_neighbours(data, args_num_noise_nodes, node_indices, binary=args_binary, p=args_p, connectedness=args_connectedness)
 	
 	# Define training parameters depending on (model-dataset) couple
 	hyperparam = ''.join(['hparams_',args_dataset,'_', args_model])
@@ -335,10 +335,10 @@ def filter_useless_nodes(args_model,
 			M.append(explainer.M)
 
 			# Number of noisy nodes in the subgraph of node_idx 
-			num_noisy_nodes = len([n_idx for n_idx in explainer.neighbors if n_idx >= data.x.size(0)-args_num_noise_nodes])
+			num_noisy_nodes = len([n_idx for n_idx in explainer.neighbours if n_idx >= data.x.size(0)-args_num_noise_nodes])
 
 			# Number of neighbours in the subgraph 
-			total_neigbours.append(len(explainer.neighbors))
+			total_neigbours.append(len(explainer.neighbours))
 
 			# Multilabel classification - consider all classes instead of focusing on the
 			# class that is predicted by our model 
@@ -351,12 +351,12 @@ def filter_useless_nodes(args_model,
 				nei_indices = np.abs(coefs[:,i]).argsort()[-args_K:].tolist()  
 				
 				# Number of noisy features that appear in explanations - use index to spot them
-				num_noise_nei = sum(idx >= (explainer.neighbors.shape[0] - num_noisy_nodes) for idx in nei_indices)
+				num_noise_nei = sum(idx >= (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
 				num_noise_neis.append(num_noise_nei)
 
 				if i==predicted_class:
 					#nei_indices = coefs[:,i].argsort()[-args_K:].tolist()  
-					#num_noise_nei = sum(idx >= (explainer.neighbors.shape[0] - num_noisy_nodes) for idx in nei_indices)
+					#num_noise_nei = sum(idx >= (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
 					pred_class_num_noise_neis.append(num_noise_nei)
 			
 			# Return this number => number of times noisy neighbours are provided as explanations
@@ -520,12 +520,30 @@ def eval_shap(args_dataset,
 
 ############################################################################
 
-def eval_gnne():
+def eval_gnne(args_dataset, args_model):
 	"""
 	Evaluate GraphSHAP on GNNExplainer synthetic datasets 
 	"""
+	# Load / Create desired synthetic dataset 
+	data = prepare_data(args_dataset, 10)
 
-	data = gengraph.preprocess_input_graph(G, labels)
+	# Train model 
+	hyperparam = ''.join(['hparams_','syn1','_', 'GCN'])
+	param = ''.join(['params_','syn1','_', 'GCN'])
+	model = GCN(input_dim=data.x.size(1), output_dim= data.num_classes, **eval(hyperparam) )
+	train_and_val(model, data, **eval(param))
+
+	# Explain
+	graphshap = GraphSHAP(data, model)
+	graphshap_explanations = graphshap.explain(node_index=0, 
+										hops=2, 
+										num_samples=100,
+										info=True)
+
+	gnne = GNNExplainer(data, model)
+	gnne_explanations = gnne.explain(node_index=0, 
+										hops=2, 
+										num_samples=100)
 
 
 	

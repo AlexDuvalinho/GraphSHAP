@@ -1,4 +1,4 @@
-from src.eval import filter_useless_features, filter_useless_nodes
+from src.eval import filter_useless_features, eval_gnne
 from src.utils import DIM_FEAT_P
 import torch
 #import warnings
@@ -10,8 +10,8 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, default= 'GAT', 
 							help= "Name of the GNN: GCN or GAT")
-parser.add_argument("--dataset", type=str, default= 'Cora',
-							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
+parser.add_argument("--dataset", type=str, default= 'syn1',
+							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, syn1")
 parser.add_argument("--explainers", type=list, default= ['GraphSHAP', 'SHAP', 'Greedy', 'GNNExplainer', 'LIME', 'GraphLIME'],
 							help= "Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
 parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP', 'Greedy', 'GNNExplainer'],
@@ -60,7 +60,7 @@ noisy_feat_included = filter_useless_features(args.model,
 											node_indices,
 											args.multiclass,
 											info=True)
-"""
+
 
 # Neighbours
 noisy_nei_included = filter_useless_nodes(args.model,
@@ -77,3 +77,6 @@ noisy_nei_included = filter_useless_nodes(args.model,
 										node_indices,
 										args.multiclass,
 										info=True)
+"""
+
+eval_gnne(args.dataset, args.model)

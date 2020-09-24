@@ -4,8 +4,7 @@ import numpy as np
 from copy import deepcopy
 import torch_geometric
 import torch
-import tqdm
-import matplotlib.pyplot as plt
+import matplotlib
 
 # GraphLIME
 from src.utils import k_hop_subgraph
@@ -25,7 +24,7 @@ class GraphSHAP():
 		self.data = data
 		self.model.eval()
 		self.M = None # number of nonzero features - for each node index
-		self.neighbors = None
+		self.neighbours = None
 		self.F = None 
 
 	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
@@ -47,21 +46,21 @@ class GraphSHAP():
 		feat_idx = torch.nonzero(x)
 
 		# Construct k hop subgraph of node of interest (denoted v)
-		neighbours, _, _, edge_mask =\
+		self.neighbours, _, _, edge_mask =\
 			 torch_geometric.utils.k_hop_subgraph(node_idx=node_index, 
 												num_hops=hops, 
 												edge_index= self.data.edge_index)
 		# Store the indexes of the neighbours of v (+ index of v itself)
 
 		# Remove node v index from neighbours and store their number in D
-		self.neighbors = neighbours[neighbours!=node_index]
-		D = self.neighbors.shape[0] 
+		self.neighbours = self.neighbours[self.neighbours!=node_index]
+		D = self.neighbours.shape[0] 
 
 		# Total number of features + neighbours considered for node v
 		self.M = self.F+D
 
 		# Sample z' - binary vector of dimension (num_samples, M)
-		# F node features first, then D neighbors
+		# F node features first, then D neighbours
 		z_ = torch.empty(num_samples, self.M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
@@ -138,7 +137,7 @@ class GraphSHAP():
 			nodes_id = []
 			for j in range(D):
 				if z_[i,self.F+j]==0:
-					node_id = self.neighbors[j].item()
+					node_id = self.neighbours[j].item()
 					nodes_id.append(node_id)
 			# Dico with key = num_sample id, value = excluded neighbour index
 			excluded_nei[i] = nodes_id
@@ -215,13 +214,13 @@ class GraphSHAP():
 
 		# Isolate explanations for predicted class - explain model choices
 		pred_explanation = phi[:,true_pred]
-		print('Explanation for the class predicted by the model:', pred_explanation)
+		# print('Explanation for the class predicted by the model:', pred_explanation)
 
 		# Look at repartition of weights among neighbours and node features
 		# Motivation for regularisation 
 		sum_feat = sum_nei = 0 
 		for i in range(len(pred_explanation)):
-			if i < F: 
+			if i < self.F: 
 				sum_feat += np.abs(pred_explanation[i])
 			else: 
 				sum_nei += np.abs(pred_explanation[i])
@@ -232,7 +231,7 @@ class GraphSHAP():
 		# positive weights in our explanations (proba is close to 1 everytime). 
 		# Alternative is to view a class at random or the second best class 
 
-		# Select most influential neighbors and/or features (+ or -)
+		# Select most influential neighbours and/or features (+ or -)
 		if self.F + D > 10: 
 			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation)), 6)
 			vals = [pred_explanation[idx] for idx in idxs]
@@ -242,13 +241,13 @@ class GraphSHAP():
 				if idx.item() < self.F: 
 					influential_feat[feat_idx[idx]] = val
 				else: 
-					influential_nei[neighbour[idx-F]] = val
+					influential_nei[self.neighbours[idx-self.F]] = val
 			print('Most influential features: ', [(item[0].item(),item[1].item()) for item in list(influential_feat.items())], 
 			'and neighbours', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())])
 
 		# Most influential features splitted bewteen neighbours and features
 		if self.F > 5:
-			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[:F])), 3)
+			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[:self.F])), 3)
 			vals = [pred_explanation[idx] for idx in idxs]
 			influential_feat = {}
 			for idx, val in zip(idxs, vals): 
@@ -257,11 +256,11 @@ class GraphSHAP():
 
 		# Most influential features splitted bewteen neighbours and features
 		if D > 5: 
-			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[F:])), 3)
-			vals = [pred_explanation[F + idx] for idx in idxs]
+			_, idxs = torch.topk(torch.from_numpy(np.abs(pred_explanation[self.F:])), 3)
+			vals = [pred_explanation[self.F + idx] for idx in idxs]
 			influential_nei = {}
 			for idx, val in zip(idxs, vals): 
-				influential_nei[neighbour[idx]] = val
+				influential_nei[self.neighbours[idx]] = val
 			print('Most influential neighbours: ', [(item[0].item(),item[1].item()) for item in list(influential_nei.items())] )
 			
 
@@ -282,14 +281,14 @@ class GraphSHAP():
 				mask[i]=1
 				
 		# Attribute phi to edges in subgraph bsed on the incident node phi value
-		for i, nei in enumerate(self.neighbors): 
+		for i, nei in enumerate(self.neighbours): 
 			list_indexes = (self.data.edge_index[0,:]==nei).nonzero()
 			for idx in list_indexes: 
 				if self.data.edge_index[1,idx]==0:
-					mask[idx] = phi[self.M - len(self.neighbors) + i, predicted_class] 
+					mask[idx] = phi[self.M - len(self.neighbours) + i, predicted_class] 
 					break
 				elif mask[idx]==1:
-					mask[idx] = phi[self.M - len(self.neighbors) + i, predicted_class] 
+					mask[idx] = phi[self.M - len(self.neighbours) + i, predicted_class] 
 			#mask[mask.nonzero()[i].item()]=phi[i, predicted_class]
 		
 		# Set to 0 importance of edges related to 0 
@@ -315,7 +314,7 @@ class Greedy:
 		self.model = model
 		self.data = data
 		self.model.eval()
-		self.neighbors = None
+		self.neighbours = None
 		self.M = None
 		self.F = None 
 
@@ -368,7 +367,7 @@ class Greedy:
 
 		# Remove node v index from neighbours and store their number in D
 		neighbours = neighbours[neighbours!=node_index]
-		self.neighbors = neighbours
+		self.neighbours = neighbours
 		self.M = neighbours.shape[0] 
 
 		### Compute predictions
@@ -381,7 +380,7 @@ class Greedy:
 		coef_pred_class = np.zeros(self.data.x.size(1))
 
 		# Loop on all features - consider all classes
-		for i, nei_idx in enumerate(self.neighbors):
+		for i, nei_idx in enumerate(self.neighbours):
 			nei_idx = nei_idx.item()
 			A_ = deepcopy(self.data.edge_index)
 
@@ -601,7 +600,7 @@ class SHAP():
 		self.data = data
 		self.model.eval()
 		self.M = None # number of nonzero features - for each node index
-		self.neighbors = None
+		self.neighbours = None
 		self.F = None
 
 	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
@@ -627,7 +626,7 @@ class SHAP():
 		self.M = F
 
 		# Sample z' - binary vector of dimension (num_samples, M)
-		# F node features first, then D neighbors
+		# F node features first, then D neighbours
 		z_ = torch.empty(num_samples, self.M).random_(2)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
@@ -748,7 +747,7 @@ class GNNExplainer():
 		self.M = data.x.size(0) + data.x.size(1)
 		# self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
 		self.coefs = None
-		self.neighbors = None
+		self.neighbours = None
 		self.F = data.x.size(1)
 
 	def explain(self, node_index, hops, num_samples, info=False):
@@ -764,9 +763,9 @@ class GNNExplainer():
 			else: 
 				dico[node].append(edge_mask[idx])
 		# Count neighbours in the subgraph
-		self.neighbors = torch.tensor([index for index in dico.keys()])
+		self.neighbours = torch.tensor([index for index in dico.keys()])
 		# Attribute an importance measure to each node = sum of incident edges' importance
-		self.coefs = torch.zeros(self.neighbors.shape[0], self.data.num_classes)
+		self.coefs = torch.zeros(self.neighbours.shape[0], self.data.num_classes)
 		#for key, val in dico.items(): 
 		for i, val in enumerate(dico.values()):
 			#self.coefs[key,:] = sum(val) 

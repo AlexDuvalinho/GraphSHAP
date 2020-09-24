@@ -5,7 +5,8 @@ INPUT_DIM = {'Cora': 1433,
 			'PubMed': 500,
 			'Amazon':745,
 			'PPI': 50,
-			'Reddit': 602}
+			'Reddit': 602,
+			'syn':10}
 
 EVAL1_CORA = {'args_p':0.013,
 			'args_binary':True,
@@ -108,6 +109,34 @@ params_PPI_GAT = {
 	'lr':0.005, 
 	'wd':0
 	}
+
+
+# Model structure hyperparameters for syn dataset, GCN model
+hparams_syn1_GCN = {
+		'hidden_dim': [16],
+		'dropout': 0
+		}
+
+# Training hyperparameters for syn dataset, GCN model 
+params_syn1_GCN = {
+	'num_epochs':1000,
+	'lr':0.05, 
+	'wd':5e-4
+	}
+
+
+hparams_syn4_GCN = {
+		'hidden_dim': [16,32,32,16],
+		'dropout': 0
+		}
+
+# Training hyperparameters for syn dataset, GCN model 
+params_syn4_GCN = {
+	'num_epochs':1000,
+	'lr':0.02, 
+	'wd':5e-4
+	}
+
 
 
 import torch
