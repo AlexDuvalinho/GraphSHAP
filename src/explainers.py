@@ -4,7 +4,8 @@ import numpy as np
 from copy import deepcopy
 import torch_geometric
 import torch
-import matplotlib
+import matplotlib.pyplot as plt
+
 
 # GraphLIME
 from src.utils import k_hop_subgraph
@@ -267,14 +268,14 @@ class GraphSHAP():
 
 	def vizu(self, edge_mask, node_index, phi, predicted_class, hops):
 		"""
-		:param true_pred: class predicted by original model for node of interest
-		:param phi: shapley values
-		:param feat_idx: index of features whose importance is assessed
-		:param neighbours: index of nodes whose importance is assessed
-		:return: nice visualisation (like SHAP) of each feature/neigbour's average
-		marginal contribution towards the prediction 
+		:param edge_mask: vector of size data.edge_index with False if edge is not included in subgraph around node_index
+		:param node_index: node of interest
+		:param phi: explanations for node of interest
+		:param predicted class: class predicted by model for node of interest 
+		:param hops: number of hops considered for subgraph around node of interest 
+		Vizu of important nodes in subgraph of node_index
 		"""
-		# Replace False by 0, True by 1
+		# Replace False by 0, True by 1 in edge_mask 
 		mask = torch.zeros(self.data.edge_index.shape[1])
 		for i, val in enumerate(edge_mask):
 			if val.item()==True:
@@ -284,7 +285,7 @@ class GraphSHAP():
 		for i, nei in enumerate(self.neighbours): 
 			list_indexes = (self.data.edge_index[0,:]==nei).nonzero()
 			for idx in list_indexes: 
-				if self.data.edge_index[1,idx]==0:
+				if self.data.edge_index[1,idx]==node_index:
 					mask[idx] = phi[self.M - len(self.neighbours) + i, predicted_class] 
 					break
 				elif mask[idx]==1:
@@ -305,7 +306,9 @@ class GraphSHAP():
 									hops, 
 									y=self.data.y, 
 									threshold=None)
-		plt.show()
+		
+		plt.savefig('demo.png', bbox_inches='tight')
+		#plt.show()
 
 
 class Greedy:
@@ -746,22 +749,24 @@ class GNNExplainer():
 		self.model = model
 		self.M = data.x.size(0) + data.x.size(1)
 		# self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
-		self.coefs = None
+		self.coefs = None # node importance derived froom edge importance 
+		self.edge_mask = None
 		self.neighbours = None
 		self.F = data.x.size(1)
 
 	def explain(self, node_index, hops, num_samples, info=False):
-		explainer = GNNE(self.model, epochs=200)
-		node_feat_mask, edge_mask = explainer.explain_node(node_index, self.data.x, self.data.edge_index)
+		# Use GNNE open source implem - outputs features's and edges importance
+		explainer = GNNE(self.model, epochs=num_samples)
+		node_feat_mask, self.edge_mask = explainer.explain_node(node_index, self.data.x, self.data.edge_index)
 
 		# Transfer edge importance to node importance 
 		dico = {}
-		for idx in torch.nonzero(edge_mask):
+		for idx in torch.nonzero(self.edge_mask):
 			node = self.data.edge_index[0,idx].item()
 			if not node in dico.keys():
-				dico[node]=[edge_mask[idx]]
+				dico[node]=[self.edge_mask[idx]]
 			else: 
-				dico[node].append(edge_mask[idx])
+				dico[node].append(self.edge_mask[idx])
 		# Count neighbours in the subgraph
 		self.neighbours = torch.tensor([index for index in dico.keys()])
 		# Attribute an importance measure to each node = sum of incident edges' importance
@@ -770,5 +775,48 @@ class GNNExplainer():
 		for i, val in enumerate(dico.values()):
 			#self.coefs[key,:] = sum(val) 
 			self.coefs[i,:]=sum(val)
+		
+		# Eliminate node_index from neighbourhood
+		self.neighbours=self.neighbours[self.neighbours!=node_index]
+		self.coefs = self.coefs[1:]
+		
+		if info == True: 
+			self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
 
 		return torch.stack([node_feat_mask]*self.data.num_classes, 1)
+
+
+	def vizu(self, edge_mask, node_index, phi, hops):
+		"""
+		Visualize the importance of neighbours in the subgraph of node_index
+		"""
+		# Replace False by 0, True by 1
+		mask = torch.zeros(self.data.edge_index.shape[1])
+		for i, val in enumerate(edge_mask):
+			if val.item()!=0:
+				mask[i]=1
+				
+		# Attribute phi to edges in subgraph bsed on the incident node phi value
+		for i, nei in enumerate(self.neighbours): 
+			list_indexes = (self.data.edge_index[0,:]==nei).nonzero()
+			for idx in list_indexes: 
+				if self.data.edge_index[1,idx]==node_index:
+					mask[idx] = edge_mask[idx] 
+					break
+				elif mask[idx]!=0:
+					mask[idx] = edge_mask[idx]  
+		
+		# Set to 0 importance of edges related to 0 
+		mask[mask==1]=0
+
+		# Vizu nodes and 
+		ax, G = visualize_subgraph(self.model, 
+									node_index, 
+									self.data.edge_index, 
+									mask, 
+									hops, 
+									y=self.data.y, 
+									threshold=None)
+		
+		plt.savefig('demo.png', bbox_inches='tight')
+		#plt.show()

@@ -1,4 +1,4 @@
-from src.eval import filter_useless_features, eval_gnne
+from src.eval import filter_useless_features, filter_useless_nodes, eval_gnne
 from src.utils import DIM_FEAT_P
 import torch
 #import warnings
@@ -79,4 +79,4 @@ noisy_nei_included = filter_useless_nodes(args.model,
 										info=True)
 """
 
-eval_gnne(args.dataset, args.model)
+eval_gnne(args.dataset, args.model, args.test_samples, node_indices)

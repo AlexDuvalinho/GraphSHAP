@@ -11,7 +11,7 @@ class GCN(nn.Module):
 	"""
 	def __init__(self, input_dim, hidden_dim, output_dim, dropout):
 		super(GCN, self).__init__()
-
+		
 		self.dropout = dropout
 		self.conv_in = GCNConv(input_dim, hidden_dim[0])
 		self.conv = [GCNConv(hidden_dim[i-1], hidden_dim[i]) for i in range(1,len(hidden_dim))]

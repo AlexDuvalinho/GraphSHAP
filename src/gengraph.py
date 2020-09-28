@@ -90,8 +90,8 @@ def preprocess_input_graph(G, labels, normalize_adj=False):
 	edge_index = torch.tensor([[],[]], dtype=torch.int64)
 	for i, row in enumerate(adj):
 		for j, entry in enumerate(row): 
-			if entry != 0:
-				edge_index = torch.cat((edge_index,torch.tensor([[torch.tensor(i, dtype=torch.int64)],[torch.tensor(j, dtype=torch.int64)]],  dtype=torch.int64)),dim=1)
+	 		if entry != 0:
+	 			edge_index = torch.cat((edge_index,torch.tensor([[torch.tensor(i, dtype=torch.int64)],[torch.tensor(j, dtype=torch.int64)]],  dtype=torch.int64)),dim=1)
 
 	# Define features 
 	existing_node = list(G.nodes)[-1]

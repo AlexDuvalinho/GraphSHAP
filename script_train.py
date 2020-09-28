@@ -15,9 +15,9 @@ the desired GNN model on this same dataset.
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, default= 'GAT', 
 							help= "Name of the GNN: GCN or GAT")
-parser.add_argument("--dataset", type=str, default= 'PubMed',
+parser.add_argument("--dataset", type=str, default= 'syn1',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--seed", type=int, default=10)
+parser.add_argument("--seed", type=int, default=100)
 parser.add_argument("--save", type=str, default=False,
 							help= "True to save the trained model obtained")
 args = parser.parse_args()

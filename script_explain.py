@@ -12,7 +12,7 @@ parser.add_argument("--model", type=str, default= 'GCN',
 							help= "Name of the GNN: GCN or GAT")
 parser.add_argument("--dataset", type=str, default= 'Cora',
 							help= "Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-parser.add_argument("--explainer", type=str, default= 'GraphSHAP',
+parser.add_argument("--explainer", type=str, default= 'GNNExplainer',
 							help= "Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
 parser.add_argument("--seed", type=int, default=10)
 parser.add_argument("--node_index", type=int, default=0,
@@ -36,13 +36,9 @@ model = torch.load(model_path)
 explainer = eval(args.explainer)(data, model)
 explanations = explainer.explain(node_index=args.node_index, 
 									hops=args.hops, 
-									num_samples=args.num_samples)
+									num_samples=args.num_samples,
+									info=True)
 
 print(explanations.shape)
 print(explanations[1].max())
 
-
-
-data = prepare_data('syn1', 10)
-
-data = torch.load(data_path)

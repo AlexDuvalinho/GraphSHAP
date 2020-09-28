@@ -73,7 +73,8 @@ def train_on_epoch(model, data, optimizer):
 	model.train()
 	optimizer.zero_grad()
 	output = model(data.x, data.edge_index)
-	train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
+	#train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
+	train_loss = F.cross_entropy(output[data.train_mask], data.y[data.train_mask], size_average=True)
 	train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
 
 	train_loss.backward()
@@ -91,7 +92,8 @@ def evaluate(model, data, mask):
 
 	with torch.no_grad():
 		output = model(data.x, data.edge_index)
-		loss = F.nll_loss(output[mask], data.y[mask])
+		loss = F.cross_entropy(output[mask], data.y[mask])
+		#loss = F.nll_loss(output[mask], data.y[mask])
 		acc = accuracy(output[mask], data.y[mask])
 
 	return loss, acc
@@ -112,6 +114,30 @@ def accuracy(output, labels):
 
 	# Return accuracy metric
 	return correct / len(labels)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 """
