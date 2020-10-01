@@ -62,11 +62,21 @@ model = GAT(input_dim=data.x.size(1), output_dim= data.num_classes, **eval(hyper
 train_and_val(model, data, **eval(param))
 
 # Explain
-explainer = GraphSHAP(data, model)
-explanations = explainer.explain(node_index=0, 
-									hops=2, 
-									num_samples=100)
+# explainer = GraphSHAP(data, model)
+# explanations = explainer.explain(node_index=0, 
+# 									hops=2, 
+# 									num_samples=100)
 
+def test(name, val=True):
+    """[summary]
+
+    Args:
+        name ([type]): [description]
+        val (bool, optional): [description]. Defaults to True.
+
+    Returns:
+        [type]: [description]
+    """
 
 #############################################################
 

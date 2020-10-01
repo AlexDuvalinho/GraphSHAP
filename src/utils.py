@@ -134,8 +134,8 @@ hparams_syn1_GAT = {
 }
 
 params_syn1_GAT = {
-	'num_epochs': 100,
-	'lr': 0.1,
+	'num_epochs': 500,
+	'lr': 0.001,
 	'wd': 5e-4
 }
 

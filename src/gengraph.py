@@ -86,7 +86,7 @@ def preprocess_input_graph(G, labels, normalize_adj=False):
 		sqrt_deg = np.diag(1.0 / np.sqrt(np.sum(adj, axis=0, dtype=float).squeeze()))
 		adj = np.matmul(np.matmul(sqrt_deg, adj), sqrt_deg)
 	
-	ajd = torch.tensor(adj, dtype=torch.int64)[0]
+	adj = torch.tensor(adj, dtype=torch.int64)[0]
 	edge_index = torch.tensor([[],[]], dtype=torch.int64)
 	for i, row in enumerate(adj):
 		for j, entry in enumerate(row): 

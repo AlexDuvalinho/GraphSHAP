@@ -30,6 +30,7 @@ class GCN(nn.Module):
 		return F.log_softmax(x, dim=1)
 
 
+"""
 class GAT(nn.Module):
 	def __init__(self, input_dim, hidden_dim, output_dim, dropout, n_heads):
 		super(GAT, self).__init__()
@@ -67,3 +68,35 @@ class GAT(nn.Module):
 			x = self.conv_out(x, edge_index)
 		
 			return F.log_softmax(x, dim=1)
+"""
+
+class GAT(nn.Module):
+	def __init__(self, input_dim, hidden_dim, output_dim, dropout, n_heads):
+		super(GAT, self).__init__()
+		self.dropout = dropout
+
+		self.conv_in = GATConv(
+			input_dim, hidden_dim[0], heads=n_heads[0], dropout=self.dropout)
+
+
+		self.linear = nn.Linear(60, output_dim)
+
+	def forward(self, x, edge_index, att=None):
+		x = F.dropout(x, p=self.dropout, training=self.training)
+
+		if att:  # if we want to see attention weights
+
+			x, alpha = self.conv_in(x, edge_index, return_attention_weights=att)
+			x = F.elu(x)
+
+			x = self.linear(x)
+
+			return F.log_softmax(x, dim=1), alpha, alpha
+
+		else:
+			x = self.conv_in(x, edge_index)
+			x = F.elu(x)
+			x = self.linear(x)
+
+			return F.log_softmax(x, dim=1)
+
