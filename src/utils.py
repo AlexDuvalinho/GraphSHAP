@@ -110,38 +110,8 @@ params_PPI_GAT = {
 	'wd':0
 	}
 
-### Synthethic datasets 
 
-# Model structure hyperparameters for syn dataset, GCN model
-hparams_syn1_GCN = {
-		'hidden_dim': [16],
-		'dropout': 0
-		}
-
-# Training hyperparameters for syn dataset, GCN model 
-params_syn1_GCN = {
-	'num_epochs':1000,
-	'lr':0.05, 
-	'wd':5e-4
-	}
-
-
-# Cora - GAT
-hparams_syn1_GAT = {
-    'hidden_dim': [20, 20],
-  		'dropout': 0,
-  		'n_heads': [3,3]
-}
-
-params_syn1_GAT = {
-	'num_epochs': 500,
-	'lr': 0.001,
-	'wd': 5e-4
-}
-
-hparams_syn2_GAT = hparams_syn4_GAT = hparams_syn5_GAT = hparams_syn1_GAT
-params_syn2_GAT = params_syn4_GAT = params_syn5_GAT = params_syn1_GAT
-
+################################################
 
 import torch
 

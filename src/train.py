@@ -73,8 +73,7 @@ def train_on_epoch(model, data, optimizer):
 	model.train()
 	optimizer.zero_grad()
 	output = model(data.x, data.edge_index)
-	#train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
-	train_loss = F.cross_entropy(output[data.train_mask], data.y[data.train_mask], size_average=True)
+	train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
 	train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
 
 	train_loss.backward()

@@ -1,7 +1,5 @@
 import matplotlib.pyplot as plt
 from torch_geometric.nn import GNNExplainer as GNNE
-
-import src.gengraph
 from src.data import (add_noise_features, add_noise_neighbours,
 					  extract_test_nodes, prepare_data)
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
@@ -10,6 +8,9 @@ from src.models import GAT, GCN
 from src.plots import plot_dist
 from src.train import *
 from src.utils import *
+
+###############################################################################
+
 
 def filter_useless_features(args_model,
 							args_dataset,
@@ -225,6 +226,7 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 	#	noise_feat = (feat_indices >= INPUT_DIM[args.dataset]).sum() # check if they are noise features - not like this
 	#	noise_feats.append(noise_feat)
 	return total_num_noise_feats
+
 
 ###############################################################################
 
@@ -489,6 +491,7 @@ def study_attention_weights(data, model, args_test_samples):
 
 	return torch.mean(alpha[1], axis=1)
 
+
 ############################################################################
 
 
@@ -572,84 +575,3 @@ def eval_shap(args_dataset,
 
 	print('iou av:', np.mean(iou))
 	print('difference in contibutions towards pred: ', np.mean(prop_contrib_diff))
-
-
-############################################################################
-
-def eval_gnne(args_dataset, args_model, args_test_samples, node_indices):
-	"""
-	Evaluate GraphSHAP on GNNExplainer synthetic datasets 
-	"""
-
-	# Load / Create desired synthetic dataset
-	data = prepare_data(args_dataset, 10)
-
-	# Train model
-	hyperparam = ''.join(['hparams_', args_dataset, '_', args_model])
-	param = ''.join(['params_', args_dataset, '_', args_model])
-	model = eval(args_model)(input_dim=data.x.size(1),
-				output_dim=data.num_classes, **eval(hyperparam))
-	train_and_val(model, data, **eval(param))
-
-	# Select a random subset of nodes to eval the explainer on.
-	if not node_indices:
-		node_indices = extract_test_nodes(data, args_test_samples)
-
-	for node_index in node_indices:
-		_, predicted_class = model(data.x, data.edge_index).exp()[
-			node_index].max(dim=0)
-
-		# Explain graphshap and vizu important structure
-		graphshap = GraphSHAP(data, model)
-		graphshap_explanations = graphshap.explain(node_index,
-												   hops=2,
-												   num_samples=100,
-												   info=True)
-		
-		
-		print('-------------------------------------------------------')
-
-		# Explain GNNE and vizu important structure
-		gnne = GNNExplainer(data, model)
-		gnne_explanations = gnne.explain(node_index,
-										 hops=2,
-										 num_samples=100,
-										 info=True)
-
-		# Our way to construct the graph - suboptimal but consistent with graphshap 
-		ax, G = gnne.vizu(gnne.edge_mask, node_index, gnne_explanations, hops=2)
-
-		# Original way to construct the graph for GNN Explainer
-		explainer = GNNE(model, epochs=100)
-		#node_feat_mask, edge_mask = explainer.explain_node(
-		#	node_index, data.x, data.edge_index)
-		explainer.visualize_subgraph(
-			node_index, data.edge_index, gnne.edge_mask, y=data.y, threshold=None)
-		
-		print('-------------------------------------------------------')
-
-		# Refer to paper to see metrics and how to properly assess the structure of interest and comparison with bench
-		alpha = edge_attention(data, model, args_test_samples)
-		explainer.visualize_subgraph(
-			node_index, data.edge_index, alpha, y=data.y, threshold=None)
-		
-		# Vizu 
-		explainer.visualize_subgraph(
-                    node_index, data.edge_index, alpha, y=data.y, threshold=None)
-
-		print('-------------------------------------------------------')
-		
-		# Metric to assess quality of predictions
-
-def edge_attention(data, model, args_test_samples):
-	"""
-		Studies the attention weights of the GAT model
-		"""
-	_, alpha, alpha_bis = model(data.x, data.edge_index, att=True)
-
-	# Remove self loops att
-	alpha = alpha[1][:-(data.x.size(0)), :]
-	alpha_bis = alpha_bis[1][:-(data.x.size(0))]
-
-	return ( torch.mean(alpha, axis=1) + torch.mean(alpha_bis, axis=1) ) / torch.tensor(2)
-

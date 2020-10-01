@@ -307,8 +307,8 @@ class GraphSHAP():
 									y=self.data.y, 
 									threshold=None)
 		
-		plt.savefig('demo.png', bbox_inches='tight')
-		#plt.show()
+		#plt.savefig('demo.png', bbox_inches='tight')
+		plt.show()
 
 
 class Greedy:
@@ -818,5 +818,5 @@ class GNNExplainer():
 									y=self.data.y, 
 									threshold=None)
 		
-		plt.savefig('demo.png', bbox_inches='tight')
-		#plt.show()
+		#plt.savefig('demo.png', bbox_inches='tight')
+		plt.show()
