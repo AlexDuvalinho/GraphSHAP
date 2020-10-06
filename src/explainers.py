@@ -211,7 +211,8 @@ class GraphSHAP():
 		
 		# Compare with true prediction of the model - see what class should truly be explained
 		true_conf, true_pred  = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
-		print('Prediction of orignal model is class {} with confidence {}'.format(true_pred, true_conf))
+		print('Prediction of orignal model is class {} with confidence {}, while label is {}'\
+			.format(true_pred, true_conf, self.data.y[node_index]))
 
 		# Isolate explanations for predicted class - explain model choices
 		pred_explanation = phi[:,true_pred]

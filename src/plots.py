@@ -44,7 +44,7 @@ def visualize_subgraph(model, node_idx, edge_index, edge_mask, num_hops, y=None,
 
 		Args:
 			node_idx (int): The node id to explain.
-			edge_index (LongTensor): The edge indices.
+			edge_index (LongTensor): The edge indices - adj matrix 
 			edge_mask (Tensor): The edge mask.
 			y (Tensor, optional): The ground-truth node-prediction labels used
 				as node colorings. (default: :obj:`None`)
