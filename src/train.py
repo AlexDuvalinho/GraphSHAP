@@ -1,18 +1,27 @@
-import numpy as np
-from tqdm import tqdm
+"""train.py
 
+Trains our model 
+"""
+
+import numpy as np
 import torch
-import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from sklearn.metrics import f1_score
-
-# from torch_geometric.data import DataLoader
+from tqdm import tqdm
 
 def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
-	"""
-	Similar function as train above except that it combines training of the model
-	with its evaluation (epoch by epoch) on validation data
+	""" Model training
+
+	Args:
+		model (pyg): model trained, previously defined
+		data (torch_geometric.Data): dataset the model is trained on
+		num_epochs (int): number of epochs 
+		lr (float): learning rate
+		wd (float): weight decay
+		verbose (bool, optional): print information. Defaults to True.
+	
 	"""
 
 	# Define the optimizer for the learning process
@@ -66,16 +75,20 @@ def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
 
 
 def train_on_epoch(model, data, optimizer):
-	"""
-	:return: loss and accuracy of model on training data
-	Core of the training process
+	""" Pytorch core training scheme for one epoch
+
+	Args: 
+		optimizer: optimizer used to teach the model. Here Adam. 
+
+	Returns:
+		[torch.Tensor]: loss function's value
+		[torch.Tensor]: accuracy of model on training data
 	"""
 	model.train()
 	optimizer.zero_grad()
 	output = model(data.x, data.edge_index)
 	train_loss = F.nll_loss(output[data.train_mask], data.y[data.train_mask])
 	train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
-
 	train_loss.backward()
 	optimizer.step()
 
@@ -83,26 +96,34 @@ def train_on_epoch(model, data, optimizer):
 
 
 def evaluate(model, data, mask):
-	"""
-	:return: loss and accuracy of model on validation data 
-	Core of the evaluation phase for model on data
+	""" Model evaluation on validation data
+
+	Args: 
+		mask (torch.tensor): validation mask
+
+	Returns:
+		[torch.Tensor]: loss function's value on validation data
+		[torch.Tensor]: accuracy of model on validation data
 	"""
 	model.eval()
-
 	with torch.no_grad():
 		output = model(data.x, data.edge_index)
-		loss = F.cross_entropy(output[mask], data.y[mask])
-		#loss = F.nll_loss(output[mask], data.y[mask])
+		loss = F.nll_loss(output[mask], data.y[mask])
 		acc = accuracy(output[mask], data.y[mask])
 
 	return loss, acc
 
 
 def accuracy(output, labels):
-	"""
-	:param output: class predictions for each node, computed with our model
-	:param labels: true label of each node
-	Compute accuracy metric for the model
+	""" Computes accuracy metric for the model on test set
+
+	Args:
+		output (tensor): class predictions for each node, computed with our model
+		labels (tensor): true label of each node
+	
+	Returns:
+		[tensor]: accuracy metric
+	
 	"""
 	# Find predicted label from predicted probabilities
 	_, pred = output.max(dim=1)
