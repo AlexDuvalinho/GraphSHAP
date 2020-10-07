@@ -1,13 +1,30 @@
+""" eval.py
+
+	Evaluation 1 of the GraphSHAP explainer
+	Add noise features and neighbours to dataset
+	Check how frequently they appear in explanations
+"""
+
+import torch
+import warnings
+from tqdm import tqdm
+import numpy as np
+
+warnings.filterwarnings('ignore')
+
 import matplotlib.pyplot as plt
+
 from torch_geometric.nn import GNNExplainer as GNNE
+
 from src.data import (add_noise_features, add_noise_neighbours,
-					  extract_test_nodes, prepare_data)
+                      extract_test_nodes, prepare_data)
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
-							Greedy, Random)
+                            Greedy, Random)
 from src.models import GAT, GCN
 from src.plots import plot_dist
-from src.train import *
+from src.train import accuracy, train_and_val
 from src.utils import *
+
 
 ###############################################################################
 
@@ -25,29 +42,13 @@ def filter_useless_features(args_model,
 							node_indices,
 							multiclass=True,
 							info=True):
-	"""
-	Arguments defined in argument parser of script_eval.py
-	Add noisy features to dataset and check how many are included in explanations
+	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
-	"""
-	'''
-	####### Input in script_eval file
-	args_dataset = 'Cora'
-	args_model = 'GCN'
-	args_explainers = ['GraphSHAP', 'Greedy', 'GraphLIME', 'LIME', 'GNNE']
-	args_hops = 2
-	args_num_samples = 100 # size shap dataset
-	args_test_samples = 20 # number of test samples
-	args_num_noise_feat= 25 # number of noisy features
-	args_K= 5 # maybe def depending on M
-	args_binary = True 
-	args_p = 0.5
-	info=True
 
-	node_indices= [2420,2455,1783,2165,2628,1822,2682,2261,1896,1880,2137,2237,2313,2218,1822,1719,1763,2263,2020,1988]
-	node_indices = [10, 18, 89, 178, 333, 356, 378, 456, 500, 2222, 1220, 1900, 1328, 189, 1111]
-	node_indices = [1834,2512,2591,2101,1848,1853,2326,1987,2359,2453,2230,2267,2399, 2150,2400]
-	'''
+	Args:
+		Arguments defined in argument parser of script_eval.py
+	
+	"""
 
 	# Define dataset - include noisy features
 	data = prepare_data(args_dataset, seed=10)
@@ -68,6 +69,14 @@ def filter_useless_features(args_model,
 
 	# Re-train the model on dataset with noisy features
 	train_and_val(model, data, **eval(param))
+
+	# Evaluate the model - test set
+	model.eval()
+	with torch.no_grad():
+		log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
+	test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+	print('Test accuracy is {:.4f}'.format(test_acc))
+	del log_logits
 
 	# Select random subset of nodes to eval the explainer on.
 	if not node_indices:
@@ -177,18 +186,23 @@ def filter_useless_features(args_model,
 	# Random explainer - plot estimated kernel density
 	total_num_noise_feats = noise_feats_for_random(
 		data, model, args_K, args_num_noise_feat, node_indices)
+	save_path = 'results/eval1_feat'
 	plot_dist(total_num_noise_feats, label='Random', color='y')
 
-	plt.show()
-	return sum(total_num_noise_feats)
+	plt.savefig('results/eval1_feat')
+	# plt.show()
 
 
 def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indices):
-	"""
-	:param args_K: number of important features
-	:param args_num_noise_feat: number of noisy features
-	:param node_indices: indices of test nodes 
-	Code to output indexes of node features 
+	""" Random explainer
+
+	Args: 
+		args_K: number of important features
+		args_num_noise_feat: number of noisy features
+		node_indices: indices of test nodes 
+	
+	Returns:
+		Number of times noisy features are provided as explanations 
 	"""
 
 	# Use Random explainer
@@ -245,25 +259,13 @@ def filter_useless_nodes(args_model,
 						 node_indices=None,
 						 multiclass=True,
 						 info=True):
-	"""
-	Arguments defined in argument parser in script_eval.py
-	Add noisy nodes to dataset and check how many are included in explanations
+	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
-	"""
 
-	'''
-	####### Input in script_eval file
-	args_dataset = 'Cora'
-	args_model = 'GAT'
-	args_hops = 2
-	args_num_samples = 100
-	args_test_samples = 10
-	args_num_noise_nodes = 20
-	args_K= 5 # maybe def depending on M 
-	args_p = 0.013
-	args_connectedness = 'medium'
-	args_binary=True
-	'''
+	Args:
+		Arguments defined in argument parser of script_eval.py
+	
+	"""
 
 	# Define dataset
 	data = prepare_data(args_dataset, seed=10)
@@ -290,6 +292,13 @@ def filter_useless_nodes(args_model,
 
 	# Re-train the model on dataset with noisy features
 	train_and_val(model, data, **eval(param))
+
+	model.eval()
+	with torch.no_grad():
+		log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
+	test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+	print('Test accuracy is {:.4f}'.format(test_acc))
+	del log_logits
 
 	# Study attention weights of noisy nodes in GAT model - compare attention with explanations
 	if str(type(model)) == "<class 'src.models.GAT'>":
@@ -409,15 +418,25 @@ def filter_useless_nodes(args_model,
 	# Random explainer - plot estimated kernel density
 	total_num_noise_neis = noise_nodes_for_random(
 		data, model, args_K, args_num_noise_nodes, node_indices)
-	plot_dist(total_num_noise_neis, label='Random', color='y')
+	plot_dist(total_num_noise_neis, label='Random',
+	          color='y')
 
-	plt.show()
+	plt.savefig('results/eval1_nodes')
+	#plt.show()
+
 	return total_num_noise_neis
 
 
 def noise_nodes_for_random(data, model, args_K, args_num_noise_nodes, node_indices):
-	"""
-	Code to output indexes of node features 
+	""" Random explainer (for neighbours)
+
+	Args: 
+		args_K: number of important features
+		args_num_noise_feat: number of noisy features
+		node_indices: indices of test nodes 
+	
+	Returns:
+		Number of times noisy features are provided as explanations 
 	"""
 
 	# Use Random explainer - on neighbours (not features)

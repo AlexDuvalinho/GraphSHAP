@@ -20,43 +20,42 @@ def build_arguments():
 	""" Build argument parser  
 	"""
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--model", type=str, default= 'GAT', 
+	parser.add_argument("--model", type=str, 
 								help= "Name of the GNN: GCN or GAT")
-	parser.add_argument("--dataset", type=str, default= 'Cora',
+	parser.add_argument("--dataset", type=str, 
 								help= "Name of the dataset among Cora, PubMed, Amazon, PPI")
-	parser.add_argument("--seed", type=int, default=10,
+	parser.add_argument("--seed", type=int, default=['GraphSHAP', 'SHAP', 'LIME', 'GraphLIME', 'Greedy', 'GNNExplainer'],
                      help="fix random state")
-	parser.add_argument("--explainers", type=list, default= ['GraphSHAP', 'SHAP', 'Greedy', 'GNNExplainer', 'LIME', 'GraphLIME'],
+	parser.add_argument("--explainers", type=list,
 								help= "Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
 	parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP', 'Greedy', 'GNNExplainer'],
 								help= "Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
-	parser.add_argument("--hops", type=int, default=2,
+	parser.add_argument("--hops", type=int, 
 								help= 'k of k-hops neighbours considered for the node of interest')
-	parser.add_argument("--num_samples", type=int, default=100,
+	parser.add_argument("--num_samples", type=int, 
 								help= 'number of coalitions sampled')
-	parser.add_argument("--test_samples", type=int, default=10,
+	parser.add_argument("--test_samples", type=int, 
 								help='number of test samples for evaluation')
-	parser.add_argument("--K", type=int, default=5,
+	parser.add_argument("--K", type=int, 
 								help= 'number of most important features considered')
-	parser.add_argument("--num_noise_feat", type=int, default=10,
+	parser.add_argument("--num_noise_feat", type=int, 
 								help='number of noisy features')
-	parser.add_argument("--num_noise_nodes", type=int, default=10,
+	parser.add_argument("--num_noise_nodes", type=int,
 								help= 'number of noisy nodes')
-	parser.add_argument("--p", type=float, default=0.5,
+	parser.add_argument("--p", type=float, 
 								help= 'proba of existance for each feature, if binary')
-	parser.add_argument("--binary", type=bool, default=True,
+	parser.add_argument("--binary", type=bool, 
 								help= 'if noisy features are binary or not')
-	parser.add_argument("--connectedness", type=str, default='low',
+	parser.add_argument("--connectedness", type=str, 
 								help= 'how connected are the noisy nodes we define: low, high or medium')
-	parser.add_argument("--multiclass", type=bool, default=False,
+	parser.add_argument("--multiclass", type=bool, 
 								help= 'False if we consider explanations for the predicted class only')		
 	
 	parser.set_defaults(
 		model = 'GAT',
 		dataset= 'Cora',
 		seed= 10,
-		explainer=['GraphSHAP', 'SHAP', 'Greedy',
-                    'GNNExplainer', 'LIME', 'GraphLIME'],
+		explainers=['GraphSHAP'],
 		node_explainers=['GraphSHAP', 'Greedy', 'GNNExplainer'],
 		hops=2,
 		num_samples=100,
@@ -72,7 +71,6 @@ def build_arguments():
 	
 	args = parser.parse_args()
 	return args
-
 
 def fix_seed(seed):
     random.seed(seed)
@@ -93,36 +91,36 @@ def main():
 	node_indices = None
 
 	# Node features
-	noisy_feat_included = filter_useless_features(args.model,
-												args.dataset,
-												args.explainers,
-												args.hops,
-												args.num_samples,
-												args.test_samples, 
-												args.K,
-												args.num_noise_feat,
-												args.p,
-												args.binary,
-												node_indices,
-												args.multiclass,
-												info=True)
+	filter_useless_features(args.model,
+							args.dataset,
+							args.explainers,
+							args.hops,
+							args.num_samples,
+							args.test_samples, 
+							args.K,
+							args.num_noise_feat,
+							args.p,
+							args.binary,
+							node_indices,
+							args.multiclass,
+							info=True)
 
 
 	# Neighbours
-	noisy_nei_included = filter_useless_nodes(args.model,
-											args.dataset,
-											args.node_explainers,
-											args.hops,
-											args.num_samples,
-											args.test_samples, 
-											args.K,
-											args.num_noise_nodes,
-											args.p,
-											args.binary,
-											args.connectedness,
-											node_indices,
-											args.multiclass,
-											info=True)
+	filter_useless_nodes(args.model,
+						args.dataset,
+						args.node_explainers,
+						args.hops,
+						args.num_samples,
+						args.test_samples, 
+						args.K,
+						args.num_noise_nodes,
+						args.p,
+						args.binary,
+						args.connectedness,
+						node_indices,
+						args.multiclass,
+						info=True)
 
 if __name__=="__main__":
 	main()
