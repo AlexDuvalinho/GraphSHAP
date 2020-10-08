@@ -85,8 +85,7 @@ def filter_useless_features(args_model,
 
 	# Loop on different explainers selected
 	for c, explainer_name in enumerate(args_explainers):
-		
-		print('EXPLAINER: ', explainer_name)
+
 		# Define explainer
 		explainer = eval(explainer_name)(data, model)
 
@@ -96,8 +95,7 @@ def filter_useless_features(args_model,
 		pred_class_num_noise_feats = []
 		# count number of noisy features considered for each test sample (for each class)
 		total_num_noise_feat_considered = []
-		K = []  # count number of non zero features for each test sample
-		F = []
+		F = []  # count number of non zero features for each test sample
 
 		# Loop on each test sample and store how many times do noise features appear among
 		# K most influential features in our explanations
@@ -108,6 +106,9 @@ def filter_useless_features(args_model,
 									  hops=args_hops,
 									  num_samples=args_num_samples,
 									  info=False)
+
+			# Check how many non zero features
+			F.append(explainer.F)
 
 			# Number of non zero noisy features
 			# Dfferent for explainers with all features considered vs non zero features only (shap,graphshap)
@@ -123,20 +124,14 @@ def filter_useless_features(args_model,
 			num_noise_feats = []
 			true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[
 				node_idx].max(dim=0)
-			
-			# Adaptable K 
-			args_num_K = data.x[node_idx].nonzero().shape * args_K
-			# args_num_K = int(args_K * explainer.F)
-
-			F.append(explainer.F)
 
 			for i in range(data.num_classes):
 
 				# Store indexes of K most important node features, for each class
 				feat_indices = np.abs(
-					coefs[:explainer.F, i]).argsort()[-args_num_K:].tolist()
+					coefs[:explainer.F, i]).argsort()[-args_K:].tolist()
 
-				# Number of noisy features that appear in explanations - use position to spot them
+				# Number of noisy features that appear in explanations - use index to spot them
 				num_noise_feat = sum(
 					idx < num_noise_feat_considered for idx in feat_indices)
 				num_noise_feats.append(num_noise_feat)
@@ -151,9 +146,6 @@ def filter_useless_features(args_model,
 			# Return number of noisy features considered in this test sample
 			total_num_noise_feat_considered.append(num_noise_feat_considered)
 
-			# Return number of non zero features
-			K.append(args_num_K)
-
 		if info:
 			print('Noise features included in explanations: ',
 				  total_num_noise_feats)
@@ -164,19 +156,19 @@ def filter_useless_features(args_model,
 			print(np.sum(pred_class_num_noise_feats) /
 				  args_test_samples, 'for the predicted class only')
 
-			perc = 100 * sum(total_num_noise_feat_considered) / np.sum(explainer.F)
+			perc = 100 * sum(total_num_noise_feat_considered) / np.sum(F)
 			print(
 				'Proportion of non-zero noisy features among non-zero features: {:.2f}%'.format(perc))
 
 			perc = 100 * sum(total_num_noise_feats) / \
-				(args_num_K * args_test_samples * data.num_classes)
+				(args_K * args_test_samples * data.num_classes)
 			print(
 				'Proportion of explanations showing noisy features: {:.2f}%'.format(perc))
 
 			if sum(total_num_noise_feat_considered) != 0:
 				perc = 100 * sum(total_num_noise_feats) / \
 					(sum(total_num_noise_feat_considered)*data.num_classes)
-				perc2 = 100 * (args_num_K * args_test_samples * data.num_classes - sum(total_num_noise_feats)) / (
+				perc2 = 100 * (args_K * args_test_samples * data.num_classes - sum(total_num_noise_feats)) / (
 					data.num_classes * (sum(F) - sum(total_num_noise_feat_considered)))
 				print('Proportion of noisy features found in explanations vs normal features (among considered ones): {:.2f}% vs {:.2f}%, over considered features only'.format(
 					perc, perc2))
@@ -185,12 +177,9 @@ def filter_useless_features(args_model,
 
 		# Plot of kernel density estimates of number of noisy features included in explanation
 		# Do for all benchmarks (with diff colors) and plt.show() to get on the same graph
-		if multiclass:
-			plot_dist(total_num_noise_feats,
-					  label=explainer_name, color=COLOURS[c])
-		else:  # consider only predicted class
-			plot_dist(pred_class_num_noise_feats,
-					  label=explainer_name, color=COLOURS[c])
+		# plot_dist(total_num_noise_feats, label=explainer_name, color=COLOURS[c])
+		plot_dist(total_num_noise_feats,
+					label=explainer_name, color=COLOURS[c])
 
 	# Random explainer - plot estimated kernel density
 	total_num_noise_feats = noise_feats_for_random(
@@ -199,7 +188,6 @@ def filter_useless_features(args_model,
 	plot_dist(total_num_noise_feats, label='Random', color='y')
 
 	plt.savefig('results/eval1_feat')
-	plt.close()
 	# plt.show()
 
 
@@ -214,8 +202,6 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 	Returns:
 		Number of times noisy features are provided as explanations 
 	"""
-	# Adaptable K
-	# args_K = int(args_K * data.x.size(1))
 
 	# Use Random explainer
 	explainer = Random(data.x.size(1), args_K)
@@ -318,8 +304,8 @@ def filter_useless_nodes(args_model,
 
 	# Do for several explainers
 	for c, explainer_name in enumerate(args_explainers):
-
-		print('EXPLAINER: ', explainer_name)	
+		
+		print('EXPLAINER: ', explainer_name)
 		# Define the explainer
 		explainer = eval(explainer_name)(data, model)
 
@@ -373,14 +359,10 @@ def filter_useless_nodes(args_model,
 			true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[
 				node_idx].max(dim=0)
 
-			# Adaptable K - vary according to number of nodes in the subgraph
-			# args_num_K = int(args_K * len(explainer.neighbours))
-			args_num_K = args_K
-
 			for i in range(data.num_classes):
 
 				# Store indexes of K most important features, for each class
-				nei_indices = np.abs(coefs[:, i]).argsort()[-args_num_K:].tolist()
+				nei_indices = np.abs(coefs[:, i]).argsort()[-args_K:].tolist()
 
 				# Number of noisy features that appear in explanations - use index to spot them
 				num_noise_nei = sum(
@@ -388,7 +370,7 @@ def filter_useless_nodes(args_model,
 				num_noise_neis.append(num_noise_nei)
 
 				if i == predicted_class:
-					#nei_indices = coefs[:,i].argsort()[-args_num_K:].tolist()
+					#nei_indices = coefs[:,i].argsort()[-args_K:].tolist()
 					#num_noise_nei = sum(idx >= (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
 					pred_class_num_noise_neis.append(num_noise_nei)
 
@@ -408,11 +390,11 @@ def filter_useless_nodes(args_model,
 				  args_test_samples, 'for the predicted class only')
 
 			print('Proportion of explanations showing noisy neighbours: {:.2f}%'.format(
-				100 * sum(total_num_noise_neis) / (args_num_K * args_test_samples * data.num_classes)))
+				100 * sum(total_num_noise_neis) / (args_K * args_test_samples * data.num_classes)))
 
 			perc = 100 * sum(total_num_noise_neis) / (args_test_samples *
 													  args_num_noise_nodes * data.num_classes)
-			perc2 = 100 * ((args_num_K * args_test_samples * data.num_classes) -
+			perc2 = 100 * ((args_K * args_test_samples * data.num_classes) -
 						   sum(total_num_noise_neis)) / (np.sum(M) - sum(total_num_noisy_nei))
 			print('Proportion of noisy neighbours found in explanations vs normal features: {:.2f}% vs {:.2f}'.format(
 				perc, perc2))
@@ -423,16 +405,13 @@ def filter_useless_nodes(args_model,
 			print('Proportion of noisy neighbours in subgraph found in explanations: {:.2f}%'.format(
 				100 * sum(total_num_noise_neis) / (sum(total_num_noisy_nei) * data.num_classes)))
 
-			print('------------------------------------')
-
 		# Plot of kernel density estimates of number of noisy features included in explanation
 		# Do for all benchmarks (with diff colors) and plt.show() to get on the same graph
-		if multiclass:
-			plot_dist(total_num_noise_neis,
-					  label=explainer_name, color=COLOURS[c])
-		else:  # consider only predicted class
-			plot_dist(pred_class_num_noise_neis,
-					  label=explainer_name, color=COLOURS[c])
+		plot_dist(total_num_noise_neis,
+					label=explainer_name, color=COLOURS[c])
+		# else:  # consider only predicted class
+		# 	plot_dist(pred_class_num_noise_neis,
+		# 			  label=explainer_name, color=COLOURS[c])
 
 	# Random explainer - plot estimated kernel density
 	total_num_noise_neis = noise_nodes_for_random(
@@ -441,7 +420,6 @@ def filter_useless_nodes(args_model,
 	          color='y')
 
 	plt.savefig('results/eval1_nodes')
-	plt.close()
 	#plt.show()
 
 	return total_num_noise_neis
@@ -458,9 +436,6 @@ def noise_nodes_for_random(data, model, args_K, args_num_noise_nodes, node_indic
 	Returns:
 		Number of times noisy features are provided as explanations 
 	"""
-	# Adaptable K
-	# args_K = int(args_K * data.x.size(0))
-	args_num_K = args_K
 
 	# Use Random explainer - on neighbours (not features)
 	explainer = Random(data.x.size(0), args_K)
