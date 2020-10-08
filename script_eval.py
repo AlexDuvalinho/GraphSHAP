@@ -10,7 +10,8 @@ import random
 
 import torch
 
-from src.eval import filter_useless_features, filter_useless_nodes
+from src.eval_multiclass import filter_useless_features, filter_useless_nodes
+from src.eval import filter_useless_features1, filter_useless_nodes1
 from src.utils import DIM_FEAT_P
 
 warnings.filterwarnings("ignore")
@@ -24,9 +25,9 @@ def build_arguments():
 								help= "Name of the GNN: GCN or GAT")
 	parser.add_argument("--dataset", type=str, 
 								help= "Name of the dataset among Cora, PubMed, Amazon, PPI")
-	parser.add_argument("--seed", type=int, default=['GraphSHAP', 'SHAP', 'LIME', 'GraphLIME', 'Greedy', 'GNNExplainer'],
+	parser.add_argument("--seed", type=int, 
                      help="fix random state")
-	parser.add_argument("--explainers", type=list,
+	parser.add_argument("--explainers", type=list, default=['GraphSHAP', 'SHAP', 'LIME', 'GraphLIME', 'Greedy', 'GNNExplainer'],
 								help= "Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
 	parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP', 'Greedy', 'GNNExplainer'],
 								help= "Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
@@ -52,22 +53,23 @@ def build_arguments():
 								help= 'False if we consider explanations for the predicted class only')		
 	
 	parser.set_defaults(
-		model = 'GAT',
-		dataset= 'Cora',
-		seed= 10,
-		explainers=['GraphSHAP'],
-		node_explainers=['GraphSHAP', 'Greedy', 'GNNExplainer'],
-		hops=2,
-		num_samples=100,
-		test_samples=10,
-		K=5,
-		num_noise_feat=10,
-		num_noise_nodes=10,
-		p=0.5,
-		binary=True,
-		connectedness='low', 
-		multiclass=False
-		)
+            model='GCN',
+            dataset='Cora',
+            seed=10,
+            explainers=['GraphSHAP', 'SHAP', 'LIME', 
+						'GraphLIME', 'Greedy', 'GNNExplainer'],
+            node_explainers=['GraphSHAP', 'GNNExplainer'],
+            hops=2,
+            num_samples=200,
+            test_samples=20,
+            K=0.25,
+            num_noise_feat=0.2,
+            num_noise_nodes=20,
+            p=0.013,
+            binary=True,
+            connectedness='low',
+            multiclass=False
+        )
 	
 	args = parser.parse_args()
 	return args
@@ -85,42 +87,68 @@ def main():
 	args = build_arguments()
 	fix_seed(args.seed)
 
-	#node_indices= [2420,2455,1783,2165,2628,1822,2682,2261,1896,1880,2137,2237,2313,2218,1822,1719,1763,2263,2020,1988]
-	#node_indices = [10, 18, 89, 178, 333, 356, 378, 456, 500, 2222, 1220, 1900, 1328, 189, 1111]
-	#node_indices = [1834,2512,2591,2101,1848,1853,2326,1987,2359,2453,2230,2267,2399, 2150,2400]
 	node_indices = None
 
-	# Node features
-	filter_useless_features(args.model,
+	if args.multiclass == True: 
+
+		# Node features
+		filter_useless_features(args.model,
+								args.dataset,
+								args.explainers,
+								args.hops,
+								args.num_samples,
+								args.test_samples, 
+								args.K,
+								args.num_noise_feat,
+								args.p,
+								args.binary,
+								node_indices,
+								args.multiclass,
+								info=True)
+
+		
+		# Neighbours
+		filter_useless_nodes(args.model,
 							args.dataset,
-							args.explainers,
+							args.node_explainers,
 							args.hops,
 							args.num_samples,
 							args.test_samples, 
 							args.K,
-							args.num_noise_feat,
+							args.num_noise_nodes,
 							args.p,
 							args.binary,
+							args.connectedness,
 							node_indices,
 							args.multiclass,
 							info=True)
-
-
-	# Neighbours
-	filter_useless_nodes(args.model,
+	else: 
+		filter_useless_features1(args.model,
 						args.dataset,
-						args.node_explainers,
+						args.explainers,
 						args.hops,
 						args.num_samples,
-						args.test_samples, 
+						args.test_samples,
 						args.K,
-						args.num_noise_nodes,
+						args.num_noise_feat,
 						args.p,
 						args.binary,
-						args.connectedness,
 						node_indices,
-						args.multiclass,
 						info=True)
 
+		# Neighbours
+		filter_useless_nodes1(args.model,
+							args.dataset,
+							args.node_explainers,
+							args.hops,
+							args.num_samples,
+							args.test_samples, 
+							args.K,
+							args.num_noise_nodes,
+							args.p,
+							args.binary,
+							args.connectedness,
+							node_indices,
+							info=True)
 if __name__=="__main__":
 	main()

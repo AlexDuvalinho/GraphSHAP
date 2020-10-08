@@ -498,7 +498,7 @@ class GraphLIME:
 		self.cached = cached
 		self.cached_result = None
 		self.M = data.x.size(1)
-		self.F = self.M
+		self.F = data.x.size(1)
 
 		self.model.eval()
 
