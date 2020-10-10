@@ -35,12 +35,10 @@ def filter_useless_features_multiclass(args_model,
 										args_hops,
 										args_num_samples,
 										args_test_samples,
-										args_K,
-										args_num_noise_feat,
-										args_p,
-										args_binary,
+										args_prop_noise_feat,
 										node_indices,
-										multiclass=True,
+                                       	args_K,
+										multiclass,
 										info=True):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
@@ -52,7 +50,9 @@ def filter_useless_features_multiclass(args_model,
 
 	# Define dataset - include noisy features
 	data = prepare_data(args_dataset, seed=10)
-	args_num_noise_feat = int(data.x.size(1) * args_num_noise_feat)
+	args_num_noise_feat = int(data.x.size(1) * args_prop_noise_feat)
+	args_p = eval('EVAL1_' + data.name)['args_p']
+	args_binary = eval('EVAL1_' + data.name)['args_binary']
 	data, noise_feat = add_noise_features(
 		data, num_noise=args_num_noise_feat, binary=args_binary, p=args_p)
 
@@ -71,6 +71,10 @@ def filter_useless_features_multiclass(args_model,
 	# Re-train the model on dataset with noisy features
 	train_and_val(model, data, **eval(param))
 
+	# Select random subset of nodes to eval the explainer on.
+	if not node_indices:
+		node_indices = extract_test_nodes(data, args_test_samples)
+
 	# Evaluate the model - test set
 	model.eval()
 	with torch.no_grad():
@@ -78,10 +82,6 @@ def filter_useless_features_multiclass(args_model,
 	test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
 	print('Test accuracy is {:.4f}'.format(test_acc))
 	del log_logits
-
-	# Select random subset of nodes to eval the explainer on.
-	if not node_indices:
-		node_indices = extract_test_nodes(data, args_test_samples)
 
 	# Loop on different explainers selected
 	for c, explainer_name in enumerate(args_explainers):
@@ -249,13 +249,11 @@ def filter_useless_nodes_multiclass(args_model,
 									args_hops,
 									args_num_samples,
 									args_test_samples,
-									args_K,
-									args_num_noise_nodes,
-									args_p,
-									args_binary,
+									args_prop_noise_nodes,
 									args_connectedness,
-									node_indices=None,
-									multiclass=True,
+									node_indices,
+                                    args_K,
+                                    multiclass=True,
 									info=True):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
@@ -267,6 +265,10 @@ def filter_useless_nodes_multiclass(args_model,
 
 	# Define dataset
 	data = prepare_data(args_dataset, seed=10)
+	args_num_noise_nodes = int(args_prop_noise_nodes * data.x.size(0))
+	args_c = eval('EVAL1_' + data.name)['args_c']
+	args_p = eval('EVAL1_' + data.name)['args_p']
+	args_binary = eval('EVAL1_' + data.name)['args_binary']
 
 	# Select a random subset of nodes to eval the explainer on.
 	if not node_indices:

@@ -49,19 +49,19 @@ def build_arguments():
 	
 	parser.set_defaults(
             model='GCN',
-            dataset='PubMed',
+            dataset='Cora',
             seed=10,
             explainers=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
-                         'LIME', 'SHAP', 'Greedy'],
+                        'LIME', 'SHAP'],
             node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
             hops=2,
             num_samples=100,
-            test_samples=10,
+            test_samples=40,
             K=0.25,
             prop_noise_feat=0.20,
             prop_noise_nodes=0.20,
             connectedness='medium',
-            multiclass=False
+            multiclass=True
         )
 	
 	args = parser.parse_args()
@@ -89,12 +89,10 @@ def main():
 											args.hops,
 											args.num_samples,
 											args.test_samples, 
-											args.K,
-											args.prop_noise_feat,
-											args.p,
-											args.binary,
+                                     		args.prop_noise_feat,
 											node_indices,
-											args.multiclass,
+                                     		5,
+                                     		args.multiclass,
 											info=True)
 		# Neighbours
 		filter_useless_nodes_multiclass(args.model,
@@ -102,18 +100,16 @@ def main():
 										args.node_explainers,
 										args.hops,
 										args.num_samples,
-										args.test_samples, 
-										args.K,
+										args.test_samples,
 										args.prop_noise_nodes,
-										args.p,
-										args.binary,
 										args.connectedness,
 										node_indices,
+                                  		5, 
 										args.multiclass,
 										info=True)
 	else: 
+		"""
 		# Features
-		
 		filter_useless_features(args.model,
 								args.dataset,
 								args.explainers,
@@ -124,7 +120,7 @@ def main():
 								args.prop_noise_feat,
 								node_indices,
 								info=True)
-		
+		"""
 		# Neighbours
 		filter_useless_nodes(args.model,
 							args.dataset,

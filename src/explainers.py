@@ -452,7 +452,7 @@ class Greedy:
 		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
 		#coef_pred_class = np.zeros(self.data.x.size(1))
 
-		# Loop on all features - consider all classes
+		# Loop on all neighbours - consider all classes
 		for i, nei_idx in enumerate(self.neighbours):
 			nei_idx = nei_idx.item()
 			A_ = deepcopy(self.data.edge_index)

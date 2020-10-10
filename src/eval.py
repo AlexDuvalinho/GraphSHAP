@@ -180,7 +180,7 @@ def filter_useless_features(args_model,
 	save_path = 'results/eval1_feat'
 	plot_dist(total_num_noise_feats, label='Random', color='y')
 
-	plt.savefig('results/eval1_feat')
+	plt.savefig('results/eval1_feat_{}'.format(data.name))
 	plt.close()
 	# plt.show()
 
@@ -394,7 +394,7 @@ def filter_useless_nodes(args_model,
 	plot_dist(total_num_noise_neis, label='Random',
 	          color='y')
 
-	plt.savefig('results/eval1_nodes')
+	plt.savefig('results/eval1_node_{}'.format(data.name))
 	plt.close()
 	#plt.show()
 
