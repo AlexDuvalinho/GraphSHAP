@@ -409,7 +409,7 @@ class Greedy:
 
 		# Init explanations vector
 		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
-		coef_pred_class = np.zeros(self.data.x.size(1))
+		#coef_pred_class = np.zeros(self.data.x.size(1))
 
 		# Loop on all features - consider all classes
 		for i, idx in enumerate(feat_idx):
@@ -421,8 +421,8 @@ class Greedy:
 					node_index]  # [label].item()
 			# Compute explanations with the following formula
 			coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
-			coef_pred_class[i] = (torch.abs(
-				pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
+			#coef_pred_class[i] = (torch.abs(
+			#	pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
 
 		return coefs  # , coef_pred_class
 
@@ -450,7 +450,7 @@ class Greedy:
 
 		# Init explanations vector
 		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
-		coef_pred_class = np.zeros(self.data.x.size(1))
+		#coef_pred_class = np.zeros(self.data.x.size(1))
 
 		# Loop on all features - consider all classes
 		for i, nei_idx in enumerate(self.neighbours):
@@ -472,8 +472,8 @@ class Greedy:
 
 			# Compute explanations with the following formula
 			coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
-			coef_pred_class[i] = (torch.abs(
-				pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
+			#coef_pred_class[i] = (torch.abs(
+			#	pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
 
 		return coefs
 
@@ -598,7 +598,7 @@ class GraphLIME:
 		L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
 
 		K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
-		L_bar = L_bar.reshape(n ** 2, 7)  # (n ** 2,)
+		L_bar = L_bar.reshape(n ** 2, self.data.num_classes)  # (n ** 2,) 
 
 		solver = LassoLars(self.rho, fit_intercept=False,
 						   normalize=False, positive=True)
@@ -827,7 +827,7 @@ class GNNExplainer():
 		self.model = model
 		self.M = data.x.size(0) + data.x.size(1)
 		# self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
-		self.coefs = None  # node importance derived froom edge importance
+		self.coefs = None  # node importance derived from edge importance
 		self.edge_mask = None
 		self.neighbours = None
 		self.F = data.x.size(1)
@@ -867,7 +867,7 @@ class GNNExplainer():
 
 		return torch.stack([node_feat_mask]*self.data.num_classes, 1)
 
-	def vuzu(self, edge_mask, node_index, phi, hops):
+	def vizu(self, edge_mask, node_index, phi, hops):
 		"""
 		Visualize the importance of neighbours in the subgraph of node_index
 		"""
@@ -899,8 +899,8 @@ class GNNExplainer():
 								   y=self.data.y,
 								   threshold=None)
 
-		plt.savefig('results/GNNE_{}_{}_{}'.format(self.data.__class__.__name__,
-												 self.model.__class__.__name__,
-												 node_index),
-					bbox_inches='tight')
+		plt.savefig('results/GS1_{}_{}_{}'.format(self.data.name,
+                                            self.model.__class__.__name__,
+                                            node_index),
+                    bbox_inches='tight')
 		#plt.show()

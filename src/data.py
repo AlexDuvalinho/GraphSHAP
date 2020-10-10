@@ -191,7 +191,7 @@ def add_noise_features(data, num_noise, binary=False, p=0.5):
 	return data, noise_feat
 
 
-def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, connectedness='high'):
+def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, connectedness='medium', c=0.001):
 	"""Add new noisy neighbours
 
 	Args:
@@ -227,7 +227,7 @@ def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, con
 		adj_matrix = torch.randint(2, size=(num_noise, new_num_nodes))
 
 	elif connectedness == 'medium':  # more sparser nodes, connected to targeted nodes of interest
-		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([0.1]))
+		m = torch.distributions.bernoulli.Bernoulli(torch.tensor([c]))
 		adj_matrix = m.sample((new_num_nodes, num_noise)).T[0]
 		# each node of interest has at least one noisy neighbour
 		for i, idx in enumerate(node_indices):

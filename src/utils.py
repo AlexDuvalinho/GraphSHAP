@@ -3,7 +3,7 @@ import torch
 # Colours for plots
 COLOURS = ['g', 'b', 'r', 'c', 'm', 'k']
 
-# Input dimension of different datasets
+# Input dimension of different datasets (features)
 INPUT_DIM = {'Cora': 1433,
              'PubMed': 500,
              'Amazon': 745,
@@ -12,18 +12,17 @@ INPUT_DIM = {'Cora': 1433,
              'syn': 10}
 
 # Hyperparameters for eval1 pipeline 
-EVAL1_CORA = {'args_p': 0.013,
-              'args_binary': True,
-              'args_num_noise_feat': 200,
-              'args_num_noise_nei': 10}
+EVAL1_Cora = {'args_p': 0.013,
+              'args_c': 0.003,
+              'args_binary': True}
 
-EVAL1_PUBMED = {'args_p': 0.1,
-                'args_binary': False,
-                'args_num_noise_feat': 75,
-                'args_num_noise_nei': 10}
+EVAL1_PubMed = {'args_p': 0.1,
+                'args_c': 0.0005,
+                'args_binary': False}
 
-DIM_FEAT_P = {'Cora': 0.013,
-              'PubMed': 0.1}
+EVAL1_Amazon = {'args_p': 0.34,
+                'args_c': 0.09,
+                'args_binary': False}
 
 # Model structure hyperparameters for Cora dataset, GCN model
 hparams_Cora_GCN = {

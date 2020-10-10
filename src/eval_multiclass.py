@@ -29,19 +29,19 @@ from src.utils import *
 ###############################################################################
 
 
-def filter_useless_features(args_model,
-							args_dataset,
-							args_explainers,
-							args_hops,
-							args_num_samples,
-							args_test_samples,
-							args_K,
-							args_num_noise_feat,
-							args_p,
-							args_binary,
-							node_indices,
-							multiclass=True,
-							info=True):
+def filter_useless_features_multiclass(args_model,
+										args_dataset,
+										args_explainers,
+										args_hops,
+										args_num_samples,
+										args_test_samples,
+										args_K,
+										args_num_noise_feat,
+										args_p,
+										args_binary,
+										node_indices,
+										multiclass=True,
+										info=True):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -187,7 +187,7 @@ def filter_useless_features(args_model,
 	save_path = 'results/eval1_feat'
 	plot_dist(total_num_noise_feats, label='Random', color='y')
 
-	plt.savefig('results/eval1_feat')
+	plt.savefig('results/eval1_feat_{}'.format(data.name))
 	# plt.show()
 
 
@@ -243,20 +243,20 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 ###############################################################################
 
 
-def filter_useless_nodes(args_model,
-						 args_dataset,
-						 args_explainers,
-						 args_hops,
-						 args_num_samples,
-						 args_test_samples,
-						 args_K,
-						 args_num_noise_nodes,
-						 args_p,
-						 args_binary,
-						 args_connectedness,
-						 node_indices=None,
-						 multiclass=True,
-						 info=True):
+def filter_useless_nodes_multiclass(args_model,
+									args_dataset,
+									args_explainers,
+									args_hops,
+									args_num_samples,
+									args_test_samples,
+									args_K,
+									args_num_noise_nodes,
+									args_p,
+									args_binary,
+									args_connectedness,
+									node_indices=None,
+									multiclass=True,
+									info=True):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -419,7 +419,7 @@ def filter_useless_nodes(args_model,
 	plot_dist(total_num_noise_neis, label='Random',
 	          color='y')
 
-	plt.savefig('results/eval1_nodes')
+	plt.savefig('results/eval1_node_{}'.format(data.name))
 	#plt.show()
 
 	return total_num_noise_neis

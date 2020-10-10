@@ -10,9 +10,8 @@ import random
 
 import torch
 
-from src.eval_multiclass import filter_useless_features, filter_useless_nodes
-from src.eval import filter_useless_features1, filter_useless_nodes1
-from src.utils import DIM_FEAT_P
+from src.eval_multiclass import filter_useless_features_multiclass, filter_useless_nodes_multiclass
+from src.eval import filter_useless_features, filter_useless_nodes
 
 warnings.filterwarnings("ignore")
 
@@ -38,15 +37,11 @@ def build_arguments():
 	parser.add_argument("--test_samples", type=int, 
 								help='number of test samples for evaluation')
 	parser.add_argument("--K", type=int, 
-								help= 'number of most important features considered')
-	parser.add_argument("--num_noise_feat", type=int, 
-								help='number of noisy features')
-	parser.add_argument("--num_noise_nodes", type=int,
-								help= 'number of noisy nodes')
-	parser.add_argument("--p", type=float, 
-								help= 'proba of existance for each feature, if binary')
-	parser.add_argument("--binary", type=bool, 
-								help= 'if noisy features are binary or not')
+								help= 'proportion of most important features considered, among non zero ones')
+	parser.add_argument("--prop_noise_feat", type=int, 
+								help='proportion of noisy features')
+	parser.add_argument("--prop_noise_nodes", type=int,
+								help= 'proportion of noisy nodes')
 	parser.add_argument("--connectedness", type=str, 
 								help= 'how connected are the noisy nodes we define: low, high or medium')
 	parser.add_argument("--multiclass", type=bool, 
@@ -54,20 +49,18 @@ def build_arguments():
 	
 	parser.set_defaults(
             model='GCN',
-            dataset='Cora',
+            dataset='PubMed',
             seed=10,
-            explainers=['GraphSHAP', 'SHAP', 'LIME', 
-						'GraphLIME', 'Greedy', 'GNNExplainer'],
-            node_explainers=['GraphSHAP', 'GNNExplainer'],
+            explainers=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
+                         'LIME', 'SHAP', 'Greedy'],
+            node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
             hops=2,
-            num_samples=200,
-            test_samples=20,
+            num_samples=100,
+            test_samples=10,
             K=0.25,
-            num_noise_feat=0.2,
-            num_noise_nodes=20,
-            p=0.013,
-            binary=True,
-            connectedness='low',
+            prop_noise_feat=0.20,
+            prop_noise_nodes=0.20,
+            connectedness='medium',
             multiclass=False
         )
 	
@@ -86,26 +79,51 @@ def main():
 
 	args = build_arguments()
 	fix_seed(args.seed)
-
 	node_indices = None
 
 	if args.multiclass == True: 
-
 		# Node features
+		filter_useless_features_multiclass(args.model,
+											args.dataset,
+											args.explainers,
+											args.hops,
+											args.num_samples,
+											args.test_samples, 
+											args.K,
+											args.prop_noise_feat,
+											args.p,
+											args.binary,
+											node_indices,
+											args.multiclass,
+											info=True)
+		# Neighbours
+		filter_useless_nodes_multiclass(args.model,
+										args.dataset,
+										args.node_explainers,
+										args.hops,
+										args.num_samples,
+										args.test_samples, 
+										args.K,
+										args.prop_noise_nodes,
+										args.p,
+										args.binary,
+										args.connectedness,
+										node_indices,
+										args.multiclass,
+										info=True)
+	else: 
+		# Features
+		
 		filter_useless_features(args.model,
 								args.dataset,
 								args.explainers,
 								args.hops,
 								args.num_samples,
-								args.test_samples, 
+								args.test_samples,
 								args.K,
-								args.num_noise_feat,
-								args.p,
-								args.binary,
+								args.prop_noise_feat,
 								node_indices,
-								args.multiclass,
 								info=True)
-
 		
 		# Neighbours
 		filter_useless_nodes(args.model,
@@ -115,38 +133,7 @@ def main():
 							args.num_samples,
 							args.test_samples, 
 							args.K,
-							args.num_noise_nodes,
-							args.p,
-							args.binary,
-							args.connectedness,
-							node_indices,
-							args.multiclass,
-							info=True)
-	else: 
-		filter_useless_features1(args.model,
-						args.dataset,
-						args.explainers,
-						args.hops,
-						args.num_samples,
-						args.test_samples,
-						args.K,
-						args.num_noise_feat,
-						args.p,
-						args.binary,
-						node_indices,
-						info=True)
-
-		# Neighbours
-		filter_useless_nodes1(args.model,
-							args.dataset,
-							args.node_explainers,
-							args.hops,
-							args.num_samples,
-							args.test_samples, 
-							args.K,
-							args.num_noise_nodes,
-							args.p,
-							args.binary,
+							args.prop_noise_nodes,
 							args.connectedness,
 							node_indices,
 							info=True)
