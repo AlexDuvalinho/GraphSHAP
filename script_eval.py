@@ -61,7 +61,7 @@ def build_arguments():
             prop_noise_feat=0.20,
             prop_noise_nodes=0.20,
             connectedness='medium',
-            multiclass=True
+            multiclass=False
         )
 	
 	args = parser.parse_args()

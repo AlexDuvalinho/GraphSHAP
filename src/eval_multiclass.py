@@ -409,6 +409,7 @@ def filter_useless_nodes_multiclass(args_model,
 
 		# Plot of kernel density estimates of number of noisy features included in explanation
 		# Do for all benchmarks (with diff colors) and plt.show() to get on the same graph
+		total_num_noise_neis = [item/data.num_classes for item in total_num_noise_neis]
 		plot_dist(total_num_noise_neis,
 					label=explainer_name, color=COLOURS[c])
 		# else:  # consider only predicted class
@@ -418,6 +419,8 @@ def filter_useless_nodes_multiclass(args_model,
 	# Random explainer - plot estimated kernel density
 	total_num_noise_neis = noise_nodes_for_random(
 		data, model, args_K, args_num_noise_nodes, node_indices)
+	
+	total_num_noise_neis= [item/data.num_classes for item in total_num_noise_neis]
 	plot_dist(total_num_noise_neis, label='Random',
 	          color='y')
 
