@@ -173,7 +173,7 @@ def add_noise_features(data, num_noise, binary=False, p=0.5):
 
 	# Do nothing if no noise feature to add
 	if not num_noise:
-		return data
+		return data, None
 
 	# Number of nodes in the dataset
 	num_nodes = data.x.size(0)
@@ -272,7 +272,7 @@ def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, con
 
 
 def extract_test_nodes(data, num_samples):
-	"""Select some test samples
+	"""Select some test samples - without repetition
 
 	Args:
 		num_samples (int): number of test samples desired
@@ -281,6 +281,6 @@ def extract_test_nodes(data, num_samples):
 		[list]: list of indexes representing nodes used as test samples
 	"""
 	test_indices = data.test_mask.cpu().numpy().nonzero()[0]
-	node_indices = np.random.choice(test_indices, num_samples).tolist()
+	node_indices = np.random.choice(test_indices, num_samples, replace=False).tolist()
 
 	return node_indices

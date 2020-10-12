@@ -26,7 +26,8 @@ def build_arguments():
 								help= "Name of the dataset among Cora, PubMed, Amazon, PPI")
 	parser.add_argument("--seed", type=int, 
                      help="fix random state")
-	parser.add_argument("--explainers", type=list, default=['GraphSHAP', 'SHAP', 'LIME', 'GraphLIME', 'Greedy', 'GNNExplainer'],
+	parser.add_argument("--explainers", type=list, default=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
+                                                         'LIME', 'SHAP', 'Greedy'],
 								help= "Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
 	parser.add_argument("--node_explainers", type=list, default= ['GraphSHAP', 'Greedy', 'GNNExplainer'],
 								help= "Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
@@ -63,6 +64,7 @@ def build_arguments():
             connectedness='medium',
             multiclass=False
         )
+
 	
 	args = parser.parse_args()
 	return args
@@ -81,35 +83,10 @@ def main():
 	fix_seed(args.seed)
 	node_indices = None
 
-	if args.multiclass == True: 
-		# Node features
-		filter_useless_features_multiclass(args.model,
-											args.dataset,
-											args.explainers,
-											args.hops,
-											args.num_samples,
-											args.test_samples, 
-                                     		args.prop_noise_feat,
-											node_indices,
-                                     		5,
-                                     		args.multiclass,
-											info=True)
-		# Neighbours
-		filter_useless_nodes_multiclass(args.model,
-										args.dataset,
-										args.node_explainers,
-										args.hops,
-										args.num_samples,
-										args.test_samples,
-										args.prop_noise_nodes,
-										args.connectedness,
-										node_indices,
-                                  		5, 
-										args.multiclass,
-										info=True)
-	else: 
-		"""
+	if args.multiclass == False: 
+		
 		# Features
+		"""
 		filter_useless_features(args.model,
 								args.dataset,
 								args.explainers,
@@ -133,5 +110,32 @@ def main():
 							args.connectedness,
 							node_indices,
 							info=True)
+	else: 
+		# Node features
+		filter_useless_features_multiclass(args.model,
+										args.dataset,
+										args.explainers,
+										args.hops,
+										args.num_samples,
+										args.test_samples,
+										args.prop_noise_feat,
+										node_indices,
+										5,
+										args.multiclass,
+										info=True)
+		# Neighbours
+		filter_useless_nodes_multiclass(args.model,
+									args.dataset,
+									args.node_explainers,
+									args.hops,
+									args.num_samples,
+									args.test_samples,
+									args.prop_noise_nodes,
+									args.connectedness,
+									node_indices,
+									5,
+									args.multiclass,
+									info=True)
+
 if __name__=="__main__":
 	main()

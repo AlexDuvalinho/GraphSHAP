@@ -612,29 +612,19 @@ class LIME:
 	def __init__(self, data, model, cached=True):
 		self.data = data
 		self.model = model
-		self.cached = cached
-		self.cached_result = None
 		self.M = data.x.size(1)
 		self.F = data.x.size(1)
 
 		self.model.eval()
 
 	def __init_predict__(self, x, edge_index, **kwargs):
-		if self.cached and self.cached_result is not None:
-			if x.size(0) != self.cached_result.size(0):
-				raise RuntimeError(
-					'Cached {} number of nodes, but found {}.'.format(
-						x.size(0), self.cached_result.size(0)))
+		
+		# Get the initial prediction.
+		with torch.no_grad():
+			log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
+			probas = log_logits.exp()
 
-		if not self.cached or self.cached_result is None:
-			# Get the initial prediction.
-			with torch.no_grad():
-				log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
-				probas = log_logits.exp()
-
-			self.cached_result = probas
-
-		return self.cached_result
+		return probas
 
 	def explain(self, node_index, hops, num_samples, info=False, **kwargs):
 		x = self.data.x
