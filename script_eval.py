@@ -52,12 +52,12 @@ def build_arguments():
             model='GCN',
             dataset='Cora',
             seed=10,
-            explainers=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
-                        'LIME', 'SHAP'],
+            explainers=['GraphSHAP','GNNExplainer', 'GraphLIME',
+                        'SHAP', 'Greedy'],
             node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
             hops=2,
-            num_samples=100,
-            test_samples=40,
+            num_samples=200,
+            test_samples=50,
             K=0.25,
             prop_noise_feat=0.20,
             prop_noise_nodes=0.20,
@@ -86,7 +86,7 @@ def main():
 	if args.multiclass == False: 
 		
 		# Features
-		"""
+		
 		filter_useless_features(args.model,
 								args.dataset,
 								args.explainers,
@@ -97,7 +97,7 @@ def main():
 								args.prop_noise_feat,
 								node_indices,
 								info=True)
-		"""
+		
 		# Neighbours
 		filter_useless_nodes(args.model,
 							args.dataset,
