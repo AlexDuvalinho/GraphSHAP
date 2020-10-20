@@ -81,3 +81,14 @@ class GAT(nn.Module):
             x = self.conv_out(x, edge_index)
 
             return F.log_softmax(x, dim=1)
+
+
+class LinearRegressionModel(nn.Module):
+
+    def __init__(self, input_dim, output_dim):
+        super(LinearRegressionModel, self).__init__()
+        self.linear = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x):
+        y_pred = self.linear(x)
+        return y_pred

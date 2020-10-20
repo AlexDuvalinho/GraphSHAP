@@ -3,6 +3,11 @@
 	Define the different explainers: GraphSHAP + benchmarks
 """
 
+from src.train import accuracy
+from src.models import LinearRegressionModel
+from sklearn.metrics import r2_score
+from torch.autograd import Variable
+from torch.utils.data import DataLoader, TensorDataset
 from copy import deepcopy
 import warnings
 
@@ -13,7 +18,7 @@ import numpy as np
 import scipy.special
 import torch
 import torch_geometric
-from sklearn.linear_model import LassoLars, Ridge
+from sklearn.linear_model import LassoLars, Ridge, Lasso
 
 # GraphLIME
 from src.plots import visualize_subgraph, k_hop_subgraph, denoise_graph, log_graph
@@ -92,9 +97,12 @@ class GraphSHAP():
 		# Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
 		fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx)
+		
+		# Weighted linear regression 
+		phi = self.WLR(z_, weights, fz)
 
 		# OLS estimator for weighted linear regression
-		phi = self.OLS(z_, weights, fz)  # dim (M*num_classes)
+		# phi = self.OLS(z_, weights, fz)  # dim (M*num_classes)
 
 		# Print some information
 		if info:
@@ -122,7 +130,7 @@ class GraphSHAP():
 			a = s[i].item()
 			# Put an emphasis on samples where all or none features are included
 			if a == 0 or a == self.M:
-				shap_kernel.append(1000)
+				shap_kernel.append(10000)
 			elif scipy.special.binom(self.M, a) == float('+inf'):
 				shap_kernel.append(1)
 			else:
@@ -204,6 +212,62 @@ class GraphSHAP():
 			fz[key] = proba
 
 		return fz
+	
+	def WLR(self, z_, weights, fz):
+		"""Train a weighted linear regression
+
+		Args:
+			z_ (torch.tensor): data
+			weights (torch.tensor): weights of each sample
+			fz (torch.tensor): y data 
+		"""
+		# Define model 
+		our_model = LinearRegressionModel(z_.shape[1], self.data.num_classes)
+
+		# Define optimizer and loss function
+		def weighted_mse_loss(input, target, weight):
+			return (weight * (input - target) ** 2).mean()
+		criterion = torch.nn.MSELoss()
+		optimizer = torch.optim.SGD(our_model.parameters(), lr=0.01)
+
+		# Dataloader 
+		train = torch.utils.data.TensorDataset(z_, fz)
+		train_loader = torch.utils.data.DataLoader(train, batch_size=1)
+		
+		# Repeat for several epochs
+		for epoch in range(100):
+
+			av_loss = []
+			#for x,y,w in zip(z_,fz, weights):
+			for batch_idx, (dat, target) in enumerate(train_loader):
+				x, y = Variable(dat), Variable(target)
+			
+				# Forward pass: Compute predicted y by passing x to the model 
+				pred_y = our_model(x)
+
+				# Compute loss
+				#loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
+				loss = criterion(pred_y,y)
+				
+				# Zero gradients, perform a backward pass, and update the weights.
+				optimizer.zero_grad()
+				loss.backward()
+				optimizer.step()
+				
+				# Store batch loss
+				av_loss.append(loss.item())
+			print('av loss epoch: ', np.mean(av_loss))
+
+		# Evaluate model
+		our_model.eval()
+		with torch.no_grad():
+			pred = our_model(z_)  
+		print('r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
+		print(r2_score(pred, fz, multioutput='raw_values'))
+
+		phi, base_value = [param.T for _,param in our_model.named_parameters()]
+		return phi.detach().numpy().astype('float64')
+
 
 	def OLS(self, z_, weights, fz):
 		""" Ordinary Least Squares Method, weighted
