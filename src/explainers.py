@@ -10,6 +10,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader, TensorDataset
 from copy import deepcopy
 import warnings
+import time
 
 warnings.filterwarnings("ignore")
 
@@ -55,6 +56,8 @@ class GraphSHAP():
 		Returns:
 				[type]: shapley values for features/neighbours that influence node v's pred
 		"""
+		# Time
+		start = time.time()
 
 		# Determine z' => features and neighbours whose importance is investigated
 
@@ -83,6 +86,9 @@ class GraphSHAP():
 		# Sample z' - binary vector of dimension (num_samples, M)
 		# F node features first, then D neighbours
 		z_ = torch.empty(num_samples, self.M).random_(2)
+		# Add manually empty and full coalitions, key for the theory
+		z_[0, :] = torch.ones(self.M)
+		z_[1, :] = torch.zeros(self.M)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
@@ -99,10 +105,11 @@ class GraphSHAP():
 		fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx)
 		
 		# Weighted linear regression 
-		phi = self.WLR(z_, weights, fz)
+		# phi = self.WLR(z_, weights, fz)
 
 		# OLS estimator for weighted linear regression
-		# phi = self.OLS(z_, weights, fz)  # dim (M*num_classes)
+		phi, base_value = self.OLS(z_, weights, fz)  # dim (M*num_classes)
+		print('Base value', base_value[true_pred], 'for class ', true_pred.item())
 
 		# Print some information
 		if info:
@@ -110,6 +117,10 @@ class GraphSHAP():
 
 		# Visualisation
 			self.vizu(edge_mask, node_index, phi, true_pred, hops)
+		
+		# Time
+		end = time.time()
+		print('Time: ', end - start)
 
 		return phi
 
@@ -161,7 +172,7 @@ class GraphSHAP():
 			# Features where z_j == 1 are kept, others are set to 0
 			for j in range(self.F):
 				if z_[i, j].item() == 1:
-					X_v[i, feat_idx[j].item()] = 1
+					X_v[i, feat_idx[j].item()] = self.data.x[i, feat_idx[j].item()]
 
 			# Define new neighbourhood
 			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
@@ -227,6 +238,7 @@ class GraphSHAP():
 		# Define optimizer and loss function
 		def weighted_mse_loss(input, target, weight):
 			return (weight * (input - target) ** 2).mean()
+
 		criterion = torch.nn.MSELoss()
 		optimizer = torch.optim.SGD(our_model.parameters(), lr=0.01)
 
@@ -282,15 +294,19 @@ class GraphSHAP():
 			[tensor]: estimated coefficients of our weighted linear regression - on (z', f(z))
 			Dimension (M * num_classes)
 		"""
-		# OLS to estimate parameter of Weighted Linear Regression
+		# Add constant term 
+		z_ = torch.cat([z_, torch.ones(z_.shape[0], 1)], dim=1)
+
+		# WLS to estimate parameters 
 		try:
 			tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
 		except np.linalg.LinAlgError:  # matrix not invertible
+			print('WLS: Matrix not invertible')
 			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
 			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1])))
 		phi = np.dot(tmp, np.dot(
 			np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
-		return phi
+		return phi[:-1,:], phi[-1,:]
 
 	def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf):
 		"""

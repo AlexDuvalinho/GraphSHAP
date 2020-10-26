@@ -24,6 +24,9 @@ EVAL1_Amazon = {'args_p': 0.34,
                 'args_c': 0.09,
                 'args_binary': False}
 
+Cora_class_distrib = [0.135, 0.075, 0.158, 0.300, 0.158,
+                       0.109, 0.063]
+
 # Model structure hyperparameters for Cora dataset, GCN model
 hparams_Cora_GCN = {
     'hidden_dim': [16],
