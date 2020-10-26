@@ -163,24 +163,27 @@ class GraphSHAP():
 		"""
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
-		X_v = torch.zeros([num_samples, self.data.num_features])
+		av_feat_values = list(self.data.x.mean(dim=0))
+		# or random feature vector made of random value across each col of X 
+		excluded_feat = {}
 		excluded_nei = {}
 
 		for i in range(num_samples):
 
 			# Define new node features dataset (we only modify x_v for now)
 			# Features where z_j == 1 are kept, others are set to 0
+			feats_id = []
 			for j in range(self.F):
-				if z_[i, j].item() == 1:
-					X_v[i, feat_idx[j].item()] = self.data.x[i, feat_idx[j].item()]
+				if z_[i, j].item() == 0:
+					feats_id.append(feat_idx[j].item())
+			excluded_feat[i] = feats_id
 
 			# Define new neighbourhood
 			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
 			nodes_id = []
 			for j in range(D):
 				if z_[i, self.F+j] == 0:
-					node_id = self.neighbours[j].item()
-					nodes_id.append(node_id)
+					nodes_id.append(self.neighbours[j].item())
 			# Dico with key = num_sample id, value = excluded neighbour index
 			excluded_nei[i] = nodes_id
 
@@ -191,7 +194,7 @@ class GraphSHAP():
 		pred_confidence = torch.zeros(num_samples)
 
 		# Create new matrix A and X - for each sample ≈ reform z from z'
-		for key, value in excluded_nei.items():
+		for (key, value), (_, value1)  in zip(excluded_nei.items(), excluded_feat.items()):
 
 			positions = []
 			# For each excluded neighbour, retrieve the column indices of its occurences
@@ -208,8 +211,12 @@ class GraphSHAP():
 			# Change feature vector for node of interest
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
-			X[node_index, :] = X_v[key, :]
+			for val in value1:
+				#X[:, val] = torch.tensor([av_feat_values[val]]*X.shape[0])
+				X[self.neighbours, val] = 0# torch.tensor([av_feat_values[val]]*D)
+				X[node_index, val] = 0 #torch.tensor([av_feat_values[val]])
 
+				
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
 				proba = self.model(x=X, edge_index=A).exp()[node_index]

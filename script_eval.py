@@ -58,7 +58,7 @@ def build_arguments():
 		node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
 		hops=2,
 		num_samples=500,
-		test_samples=5,
+		test_samples=10,
 		K=0.25,
 		prop_noise_feat=0.20,
 		prop_noise_nodes=0.20,
