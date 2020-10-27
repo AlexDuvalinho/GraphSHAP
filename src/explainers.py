@@ -213,8 +213,8 @@ class GraphSHAP():
 			X = deepcopy(self.data.x)
 			for val in value1:
 				#X[:, val] = torch.tensor([av_feat_values[val]]*X.shape[0])
-				X[self.neighbours, val] = 0# torch.tensor([av_feat_values[val]]*D)
-				X[node_index, val] = 0 #torch.tensor([av_feat_values[val]])
+				X[self.neighbours, val] = torch.tensor([av_feat_values[val]]*D)  # 0
+				X[node_index, val] = torch.tensor([av_feat_values[val]])#0
 
 				
 			# Apply model on (X,A) as input.

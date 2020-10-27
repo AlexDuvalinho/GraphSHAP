@@ -57,7 +57,7 @@ def build_arguments():
 					'SHAP', 'LIME'],
 		node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
 		hops=2,
-		num_samples=500,
+		num_samples=200,
 		test_samples=10,
 		K=0.25,
 		prop_noise_feat=0.20,
