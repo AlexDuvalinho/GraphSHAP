@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from copy import deepcopy
 import warnings
 import time
+import random
 
 warnings.filterwarnings("ignore")
 
@@ -20,6 +21,7 @@ import scipy.special
 import torch
 import torch_geometric
 from sklearn.linear_model import LassoLars, Ridge, Lasso
+from itertools import combinations
 
 # GraphLIME
 from src.plots import visualize_subgraph, k_hop_subgraph, denoise_graph, log_graph
@@ -83,12 +85,13 @@ class GraphSHAP():
 		# Total number of features + neighbours considered for node v
 		self.M = self.F+D
 
-		# Sample z' - binary vector of dimension (num_samples, M)
 		# F node features first, then D neighbours
-		z_ = torch.empty(num_samples, self.M).random_(2)
-		# Add manually empty and full coalitions, key for the theory
-		z_[0, :] = torch.ones(self.M)
-		z_[1, :] = torch.zeros(self.M)
+		#z_ = torch.empty(num_samples, self.M).random_(2)
+		#z_[0, :] = torch.ones(self.M)
+		#z_[1, :] = torch.zeros(self.M)
+			
+		# Sample z' - binary vector of dimension (num_samples, M)
+		z_ = self.coalition_sampler(num_samples)
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
@@ -123,6 +126,61 @@ class GraphSHAP():
 		print('Time: ', end - start)
 
 		return phi
+
+	def coalition_sampler(self, num_samples):
+		""" Sample coalitions cleverly given shapley kernel def
+
+		Args:
+			num_samples ([int]): total number of coalitions z_
+
+		Returns:
+			[tensor]: z_ in {0,1}^F x {0,1}^D (num_samples x self.M)
+		"""
+		z_ = torch.ones(num_samples, self.M)
+		z_[1::2] = torch.zeros(num_samples//2, self.M)
+		k = 1
+		i = 2
+		while i < num_samples:
+			if i + 2 * self.M < num_samples and k == 1:
+				z_[i:i+self.M, :] = torch.ones(self.M, self.M)
+				z_[i:i+self.M, :].fill_diagonal_(0)
+				z_[i+self.M:i+2*self.M, :] = torch.zeros(self.M, self.M)
+				z_[i+self.M:i+2*self.M, :].fill_diagonal_(1)
+				i += 2 * self.M
+				k += 1
+			elif k == 1:
+				M = list(range(self.M))
+				random.shuffle(M)
+				for j in range(self.M):
+					z_[i, M[j]] = torch.zeros(1)
+					i += 1
+					if i == num_samples:
+						return z_
+					z_[i, M[j]] = torch.ones(1)
+					i += 1
+					if i == num_samples:
+						return z_
+				k += 1
+			elif k == 2:
+				M = list(combinations(range(self.M), 2))[:num_samples-i+1]
+				random.shuffle(M)
+				for j in range(len(M)):
+					z_[i, M[j][0]] = torch.tensor(0)
+					z_[i, M[j][1]] = torch.tensor(0)
+					i += 1
+					if i == num_samples:
+						return z_
+					z_[i, M[j][0]] = torch.tensor(1)
+					z_[i, M[j][1]] = torch.tensor(1)
+					i += 1
+					if i == num_samples:
+						return z_
+				k += 1
+			else:
+				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+				return z_
+			
+		return z_
 
 	def shapley_kernel(self, s):
 		""" Computes a weight for each newly created sample 
