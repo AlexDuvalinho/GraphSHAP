@@ -77,6 +77,11 @@ class GraphSHAP():
 												 num_hops=hops,
 												 edge_index=self.data.edge_index)
 		# Store the indexes of the neighbours of v (+ index of v itself)
+	
+		one_hop_neighbours, _, _, _ =\
+					torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+														 num_hops=1,
+														 edge_index=self.data.edge_index)
 
 		# Remove node v index from neighbours and store their number in D
 		self.neighbours = self.neighbours[self.neighbours != node_index]
@@ -105,13 +110,14 @@ class GraphSHAP():
 
 		# Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx)
+		fz = self.compute_pred(node_index, num_samples, D, z_,
+		                       feat_idx, one_hop_neighbours)
 		
 		# Weighted linear regression 
-		# phi = self.WLR(z_, weights, fz)
+		phi, base_value = self.WLR(z_, weights, fz)
 
 		# OLS estimator for weighted linear regression
-		phi, base_value = self.OLS(z_, weights, fz)  # dim (M*num_classes)
+		# phi, base_value = self.OLS(z_, weights, fz)  # dim (M*num_classes)
 		print('Base value', base_value[true_pred], 'for class ', true_pred.item())
 
 		# Print some information
@@ -126,6 +132,7 @@ class GraphSHAP():
 		print('Time: ', end - start)
 
 		return phi
+
 
 	def coalition_sampler(self, num_samples):
 		""" Sample coalitions cleverly given shapley kernel def
@@ -211,8 +218,7 @@ class GraphSHAP():
 					(self.M-1)/(scipy.special.binom(self.M, a)*a*(self.M-a)))
 		return torch.tensor(shap_kernel)
 
-
-	def compute_pred(self, node_index, num_samples, D, z_, feat_idx):
+	def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -230,6 +236,7 @@ class GraphSHAP():
 		excluded_feat = {}
 		excluded_nei = {}
 
+		# Define excluded_feat and excluded_nei for each z'
 		for i in range(num_samples):
 
 			# Define new node features dataset (we only modify x_v for now)
@@ -256,27 +263,61 @@ class GraphSHAP():
 		pred_confidence = torch.zeros(num_samples)
 
 		# Create new matrix A and X - for each sample ≈ reform z from z'
-		for (key, value), (_, value1)  in zip(excluded_nei.items(), excluded_feat.items()):
+		for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
+			
+			#if min(len(ex_feat), len(ex_nei))<5:
 
 			positions = []
 			# For each excluded neighbour, retrieve the column indices of its occurences
 			# in the adj matrix - store them in positions (list)
-			for val in value:
+			for val in ex_nei:
 				pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
 				positions += pos
 			# Create new adjacency matrix for that sample
 			positions = list(set(positions))
 			A = np.array(self.data.edge_index)
-			A = np.delete(A, positions, axis=1)
+			# Special case - consider only feat. influence if too few nei included
+			if self.M - self.F - len(ex_nei) >= min(self.F - len(ex_feat), 5):
+				A = np.delete(A, positions, axis=1)
 			A = torch.tensor(A)
 
 			# Change feature vector for node of interest
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
-			for val in value1:
-				#X[:, val] = torch.tensor([av_feat_values[val]]*X.shape[0])
-				X[self.neighbours, val] = torch.tensor([av_feat_values[val]]*D)  # 0
-				X[node_index, val] = torch.tensor([av_feat_values[val]])#0
+
+
+			# Special case - consider only nei. influence if too few feat included
+			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), 5):
+				for val in ex_feat:
+					# Change excluded feature values only for v 
+					X[node_index, val] = torch.tensor([av_feat_values[val]])  # 0
+
+				# Look at the 2-hop neighbours included
+				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
+				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+				for incl_nei in included_nei: 
+					# Look at nodes connecting it to v 
+					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
+																node_idx=torch.tensor([incl_nei]),
+																num_hops=1,
+																edge_index=self.data.edge_index)
+					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
+					w = np.intersect1d(w, one_hop_neighbours)
+					
+					if set(w).intersection(ex_nei) == set(w):
+						#np.intersect1d(w, ex_nei)==w:
+						w = random.choice(w)
+						A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
+					X[w,:]= torch.tensor(av_feat_values)
+
+						#pos = (self.data.edge_index == incl_nei).nonzero()[:, 1].tolist()
+						#w = set(one_hop_neighbours.detach().numpy()).intersection(
+						#	self.data.edge_index[1, pos].detach().numpy())[0]							
+			# Usual case
+			else:
+				for val in ex_feat:
+					X[self.neighbours, val] = torch.tensor([av_feat_values[val]]*D)  # 0
+					X[node_index, val] = torch.tensor([av_feat_values[val]])
 
 				
 			# Apply model on (X,A) as input.
@@ -316,7 +357,7 @@ class GraphSHAP():
 		train_loader = torch.utils.data.DataLoader(train, batch_size=1)
 		
 		# Repeat for several epochs
-		for epoch in range(100):
+		for epoch in range(10):
 
 			av_loss = []
 			#for x,y,w in zip(z_,fz, weights):
@@ -327,7 +368,7 @@ class GraphSHAP():
 				pred_y = our_model(x)
 
 				# Compute loss
-				#loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
+				# loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
 				loss = criterion(pred_y,y)
 				
 				# Zero gradients, perform a backward pass, and update the weights.
@@ -347,7 +388,7 @@ class GraphSHAP():
 		print(r2_score(pred, fz, multioutput='raw_values'))
 
 		phi, base_value = [param.T for _,param in our_model.named_parameters()]
-		return phi.detach().numpy().astype('float64')
+		return phi.detach().numpy().astype('float64'), base_value
 
 
 	def OLS(self, z_, weights, fz):
@@ -497,9 +538,9 @@ class GraphSHAP():
 								   threshold=None)
 		
 		plt.savefig('results/GS1_{}_{}_{}'.format(self.data.name,
-                                           self.model.__class__.__name__,
-                                           node_index),
-                    bbox_inches='tight')
+										   self.model.__class__.__name__,
+										   node_index),
+					bbox_inches='tight')
 
 		# Other visualisation 
 		G = denoise_graph(self.data, mask, phi[self.F:,predicted_class], self.neighbours, node_index, feat=None, label=self.data.y, threshold_num=10)
@@ -1039,7 +1080,7 @@ class GNNExplainer():
 								   threshold=None)
 
 		plt.savefig('results/GS1_{}_{}_{}'.format(self.data.name,
-                                            self.model.__class__.__name__,
-                                            node_index),
-                    bbox_inches='tight')
+											self.model.__class__.__name__,
+											node_index),
+					bbox_inches='tight')
 		#plt.show()
