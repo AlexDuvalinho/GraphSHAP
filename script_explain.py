@@ -5,9 +5,9 @@ from src.data import prepare_data
 from src.train import accuracy
 import torch
 import argparse
-import warnings
 import random
 import numpy as np
+import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -38,7 +38,7 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_index=0,
 		hops=2,
-		num_samples=100,
+		num_samples=1000,
 	)
 
 	return parser.parse_args()
@@ -81,7 +81,7 @@ def main():
 									 info=True)
 
 	print(explanations.shape)
-	print(explanations[1].max())
+	print('g(x_): ', sum(explanations[:,3]))
 
 
 if __name__ == "__main__":

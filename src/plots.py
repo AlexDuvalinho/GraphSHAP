@@ -1,6 +1,7 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 
 from copy import copy
 from math import sqrt
@@ -10,6 +11,8 @@ import networkx as nx
 from torch_geometric.nn import MessagePassing
 from torch_geometric.data import Data
 from torch_geometric.utils import k_hop_subgraph, to_networkx
+
+warnings.filterwarnings("ignore")
 
 
 def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_path=None):

@@ -13,8 +13,6 @@ import warnings
 import time
 import random
 
-warnings.filterwarnings("ignore")
-
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.special
@@ -29,6 +27,8 @@ from src.plots import visualize_subgraph, k_hop_subgraph, denoise_graph, log_gra
 # GNNExplainer
 from torch_geometric.nn import GNNExplainer as GNNE
 from torch_geometric.nn import MessagePassing
+
+warnings.filterwarnings("ignore")
 
 
 
@@ -136,11 +136,15 @@ class GraphSHAP():
 		Returns:
 			[tensor]: z_ in {0,1}^F x {0,1}^D (num_samples x self.M)
 		"""
+		# Define empty and full coalitions
 		z_ = torch.ones(num_samples, self.M)
 		z_[1::2] = torch.zeros(num_samples//2, self.M)
 		k = 1
 		i = 2
+		# Loop until all samples are created
 		while i < num_samples:
+			# Look at each feat/nei individually if have enough sample
+			# Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
 			if i + 2 * self.M < num_samples and k == 1:
 				z_[i:i+self.M, :] = torch.ones(self.M, self.M)
 				z_[i:i+self.M, :].fill_diagonal_(0)
@@ -148,39 +152,39 @@ class GraphSHAP():
 				z_[i+self.M:i+2*self.M, :].fill_diagonal_(1)
 				i += 2 * self.M
 				k += 1
-			elif k == 1:
-				M = list(range(self.M))
-				random.shuffle(M)
-				for j in range(self.M):
-					z_[i, M[j]] = torch.zeros(1)
-					i += 1
-					if i == num_samples:
-						return z_
-					z_[i, M[j]] = torch.ones(1)
-					i += 1
-					if i == num_samples:
-						return z_
-				k += 1
-			elif k == 2:
-				M = list(combinations(range(self.M), 2))[:num_samples-i+1]
-				random.shuffle(M)
-				for j in range(len(M)):
-					z_[i, M[j][0]] = torch.tensor(0)
-					z_[i, M[j][1]] = torch.tensor(0)
-					i += 1
-					if i == num_samples:
-						return z_
-					z_[i, M[j][0]] = torch.tensor(1)
-					z_[i, M[j][1]] = torch.tensor(1)
-					i += 1
-					if i == num_samples:
-						return z_
-				k += 1
+
 			else:
+				# Split in two number of remaining samples
+				# Half for specific coalitions with low k and rest random samples
+				samp = i + 2*(num_samples - i)//3
+				while i<samp and k==min(6, self.F, self.M-self.F, k):
+					# Sample coalitions of k1 neighbours or k1 features without repet and order. 
+					L = list( combinations(range(self.F),k) ) + list( combinations(range(self.F,self.M), k) )
+					random.shuffle(L)
+					L = L[:samp+1]
+
+					for j in range(len(L)):
+						# Coalitions (All nei, All-k feat) or (All feat, All-k nei)
+						z_[i, L[j]] = torch.zeros(k)
+						i += 1
+						# If limit reached, sample random coalitions
+						if i == samp:
+							z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+							return z_
+						# Coalitions (No nei, k feat) or (No feat, k nei)
+						z_[i, L[j]] = torch.ones(k)
+						i += 1
+						# If limit reached, sample random coalitions
+						if i == samp:
+							z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+							return z_
+					k += 1
+
+				# Sample random coalitions 
 				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
-				return z_
-			
+
 		return z_
+
 
 	def shapley_kernel(self, s):
 		""" Computes a weight for each newly created sample 
