@@ -12,6 +12,7 @@ from copy import deepcopy
 import warnings
 import time
 import random
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -58,18 +59,16 @@ class GraphSHAP():
 		Returns:
 				[type]: shapley values for features/neighbours that influence node v's pred
 		"""
+		# Define K - range of endcases considered
+		args_K = 3
+		# Smarter coalitions sampling, k-hop nei, 'Default' behaviour h_v at endpoints
+		args_hv = 'compute_pred' # 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
+		args_feat = 'Null'  # 'All', 'Expectation', 'Null'
+		args_coal = 'Smarter'  # 'Smarter', 'Smart', 'Random'
+		args_g = 'WLS' # WLS , OLS
+
 		# Time
 		start = time.time()
-
-		# Determine z' => features and neighbours whose importance is investigated
-
-		# Create a variable to store node features
-		x = self.data.x[node_index, :]
-
-		# Number of non-zero entries for the feature vector x_v
-		self.F = x[x != 0].shape[0]
-		# Store indexes of these non zero feature values
-		feat_idx = torch.nonzero(x)
 
 		# Construct k hop subgraph of node of interest (denoted v)
 		self.neighbours, _, _, edge_mask =\
@@ -87,16 +86,44 @@ class GraphSHAP():
 		self.neighbours = self.neighbours[self.neighbours != node_index]
 		D = self.neighbours.shape[0]
 
+		# Determine z' => features and neighbours whose importance is investigated
+		if args_feat == 'Null':
+		# Number of non-zero entries for the feature vector x_v
+			self.F = self.data.x[node_index, :][self.data.x[node_index, :] != 0].shape[0]
+			# Store indexes of these non zero feature values
+			feat_idx = torch.nonzero(self.data.x[node_index, :])
+
+		# Consider all features
+		elif args_feat == 'All':
+			self.F = self.data.x[node_index, :].shape[0]
+			feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+
+		else: 
+			# Discard variables whose aggregated value approaches in the subgraph
+			# approaches the exptected value 
+			var = self.data.x.var(axis=0)
+			mean = self.data.x.mean(axis=0)
+			mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
+			mean_subgraph = torch.where(mean - var < mean_subgraph, mean_subgraph,
+						torch.zeros_like(mean_subgraph))
+			mean_subgraph = torch.where(mean_subgraph < mean+var, mean_subgraph,
+						torch.zeros_like(mean_subgraph))
+			feat_idx = mean_subgraph.nonzero() 
+			self.F = feat_idx.shape[0]
+			del mean, mean_subgraph, var
+
+
 		# Total number of features + neighbours considered for node v
 		self.M = self.F+D
-
-		# F node features first, then D neighbours
-		#z_ = torch.empty(num_samples, self.M).random_(2)
-		#z_[0, :] = torch.ones(self.M)
-		#z_[1, :] = torch.zeros(self.M)
 			
 		# Sample z' - binary vector of dimension (num_samples, M)
-		z_ = self.coalition_sampler(num_samples)
+		if args_coal == 'Smarter':
+			z_ = self.smarter_coalition_sampler(num_samples, args_K)
+		elif args_coal == 'Smart':
+			z_ = self.coalition_sampler(num_samples)
+		else:
+			z_ = self.random_coalition_sampler(num_samples)
+		
 		# Compute |z'| for each sample z'
 		s = (z_ != 0).sum(dim=1)
 
@@ -110,8 +137,10 @@ class GraphSHAP():
 
 		# Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, num_samples, D, z_,
-		                       feat_idx, one_hop_neighbours)
+		fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
+                            feat_idx, one_hop_neighbours, args_K, args_feat)
+		#fz = self.compute_pred(node_index, num_samples, D, z_,
+		#                       feat_idx, one_hop_neighbours, args_K, args_feat)
 		
 		# Weighted linear regression 
 		phi, base_value = self.WLR(z_, weights, fz)
@@ -133,12 +162,13 @@ class GraphSHAP():
 
 		return phi
 
-
-	def coalition_sampler(self, num_samples):
+	def smarter_coalition_sampler(self, num_samples, args_K):
 		""" Sample coalitions cleverly given shapley kernel def
+		Consider nodes and features separately to better capture their effect
 
 		Args:
 			num_samples ([int]): total number of coalitions z_
+			args_K: max size of coalitions favoured in sampling 
 
 		Returns:
 			[tensor]: z_ in {0,1}^F x {0,1}^D (num_samples x self.M)
@@ -164,7 +194,7 @@ class GraphSHAP():
 				# Split in two number of remaining samples
 				# Half for specific coalitions with low k and rest random samples
 				samp = i + 2*(num_samples - i)//3
-				while i<samp and k==min(6, self.F, self.M-self.F, k):
+				while i<samp and k<=min(args_K, self.F, self.M-self.F):
 					# Sample coalitions of k1 neighbours or k1 features without repet and order. 
 					L = list( combinations(range(self.F),k) ) + list( combinations(range(self.F,self.M), k) )
 					random.shuffle(L)
@@ -191,7 +221,68 @@ class GraphSHAP():
 				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
 
 		return z_
+	
+	def coalition_sampler(self, num_samples):
+		""" Sample coalitions cleverly given shapley kernel def
 
+		Args:
+			num_samples ([int]): total number of coalitions z_
+
+		Returns:
+			[tensor]: z_ in {0,1}^F x {0,1}^D (num_samples x self.M)
+		"""
+		z_ = torch.ones(num_samples, self.M)
+		z_[1::2] = torch.zeros(num_samples//2, self.M)
+		k = 1
+		i = 2
+		while i < num_samples:
+			if i + 2 * self.M < num_samples and k == 1:
+				z_[i:i+self.M, :] = torch.ones(self.M, self.M)
+				z_[i:i+self.M, :].fill_diagonal_(0)
+				z_[i+self.M:i+2*self.M, :] = torch.zeros(self.M, self.M)
+				z_[i+self.M:i+2*self.M, :].fill_diagonal_(1)
+				i += 2 * self.M
+				k += 1
+			elif k == 1:
+				M = list(range(self.M))
+				random.shuffle(M)
+				for j in range(self.M):
+					z_[i, M[j]] = torch.zeros(1)
+					i += 1
+					if i == num_samples:
+						return z_
+					z_[i, M[j]] = torch.ones(1)
+					i += 1
+					if i == num_samples:
+						return z_
+				k += 1
+			elif k == 2:
+				M = list(combinations(range(self.M), 2))[:num_samples-i+1]
+				random.shuffle(M)
+				for j in range(len(M)):
+					z_[i, M[j][0]] = torch.tensor(0)
+					z_[i, M[j][1]] = torch.tensor(0)
+					i += 1
+					if i == num_samples:
+						return z_
+					z_[i, M[j][0]] = torch.tensor(1)
+					z_[i, M[j][1]] = torch.tensor(1)
+					i += 1
+					if i == num_samples:
+						return z_
+				k += 1
+			else:
+				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+				return z_
+
+		return z_
+	
+	def random_coalition_sampler(self, num_samples):
+		z_ = torch.empty(num_samples, self.M).random_(2)
+		z_[0, :] = torch.ones(self.M)
+		z_[1, :] = torch.zeros(self.M)
+		return z_
+		
 
 	def shapley_kernel(self, s):
 		""" Computes a weight for each newly created sample 
@@ -218,7 +309,8 @@ class GraphSHAP():
 					(self.M-1)/(scipy.special.binom(self.M, a)*a*(self.M-a)))
 		return torch.tensor(shap_kernel)
 
-	def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours):
+
+	def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -231,16 +323,21 @@ class GraphSHAP():
 		"""
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
-		av_feat_values = list(self.data.x.mean(dim=0))
+		if args_feat == 'Null':
+			av_feat_values = torch.zeros(self.data.x.size(1))
+		else: 
+			av_feat_values = self.data.x.mean(dim=0)
+		
 		# or random feature vector made of random value across each col of X 
+
 		excluded_feat = {}
 		excluded_nei = {}
 
 		# Define excluded_feat and excluded_nei for each z'
-		for i in range(num_samples):
+		for i in tqdm(range(num_samples)):
 
 			# Define new node features dataset (we only modify x_v for now)
-			# Features where z_j == 1 are kept, others are set to 0
+			# Store index of features that are not sampled (z_j=0)
 			feats_id = []
 			for j in range(self.F):
 				if z_[i, j].item() == 0:
@@ -248,7 +345,7 @@ class GraphSHAP():
 			excluded_feat[i] = feats_id
 
 			# Define new neighbourhood
-			# Store index of neighbours that need to be shut down (not sampled, z_j=0)
+			# Store index of neighbours that need to be isolated (not sampled, z_j=0)
 			nodes_id = []
 			for j in range(D):
 				if z_[i, self.F+j] == 0:
@@ -264,11 +361,9 @@ class GraphSHAP():
 
 		# Create new matrix A and X - for each sample ≈ reform z from z'
 		for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
-			
-			#if min(len(ex_feat), len(ex_nei))<5:
 
 			positions = []
-			# For each excluded neighbour, retrieve the column indices of its occurences
+			# For each excluded neighbour, retrieve the column index of its occurences
 			# in the adj matrix - store them in positions (list)
 			for val in ex_nei:
 				pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
@@ -277,7 +372,7 @@ class GraphSHAP():
 			positions = list(set(positions))
 			A = np.array(self.data.edge_index)
 			# Special case - consider only feat. influence if too few nei included
-			if self.M - self.F - len(ex_nei) >= min(self.F - len(ex_feat), 5):
+			if self.M - self.F - len(ex_nei) >= min(self.F - len(ex_feat), args_K):
 				A = np.delete(A, positions, axis=1)
 			A = torch.tensor(A)
 
@@ -285,12 +380,11 @@ class GraphSHAP():
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
 
-
 			# Special case - consider only nei. influence if too few feat included
-			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), 5):
+			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
 				for val in ex_feat:
 					# Change excluded feature values only for v 
-					X[node_index, val] = torch.tensor([av_feat_values[val]])  # 0
+					X[node_index, val] = av_feat_values[val]  # 0
 
 				# Look at the 2-hop neighbours included
 				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
@@ -308,17 +402,388 @@ class GraphSHAP():
 						#np.intersect1d(w, ex_nei)==w:
 						w = random.choice(w)
 						A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
-					X[w,:]= torch.tensor(av_feat_values)
+					X[w,:]= av_feat_values
 
-						#pos = (self.data.edge_index == incl_nei).nonzero()[:, 1].tolist()
-						#w = set(one_hop_neighbours.detach().numpy()).intersection(
-						#	self.data.edge_index[1, pos].detach().numpy())[0]							
+					#pos = (self.data.edge_index == incl_nei).nonzero()[:, 1].tolist()
+					#w = set(one_hop_neighbours.detach().numpy()).intersection(
+					#	self.data.edge_index[1, pos].detach().numpy())[0]							
+		
 			# Usual case
 			else:
+				X[node_index, ex_feat] = av_feat_values[ex_feat]
 				for val in ex_feat:
-					X[self.neighbours, val] = torch.tensor([av_feat_values[val]]*D)  # 0
-					X[node_index, val] = torch.tensor([av_feat_values[val]])
+					X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
+				
+			# Apply model on (X,A) as input.
+			with torch.no_grad():
+				proba = self.model(x=X, edge_index=A).exp()[node_index]
 
+			# Store final class prediction and confience level
+			pred_confidence[key], classes_labels[key] = torch.topk(
+				proba, k=1)  # optional
+			# NOTE: maybe only consider predicted class for explanations
+
+			# Store predicted class label in fz
+			fz[key] = proba
+
+		return fz
+
+	def basic_default_2hop(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+		""" Construct z from z' and compute prediction f(z) for each sample z'
+			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+
+		Args:
+				Variables are defined exactly as defined in explainer function
+
+		Returns:
+				(tensor): f(z) - probability of belonging to each target classes, for all samples z
+				Dimension (N * C) where N is num_samples and C num_classses.
+		"""
+		# We need to recover z from z' - wrt sampled neighbours and node features
+		# Initialise new node feature vectors and neighbours to disregard
+		if args_feat == 'Null':
+			av_feat_values = torch.zeros(self.data.x.size(1))
+		else:
+			av_feat_values = self.data.x.mean(dim=0)
+
+		# or random feature vector made of random value across each col of X
+		excluded_feat = {}
+		excluded_nei = {}
+
+		# Define excluded_feat and excluded_nei for each z'
+		for i in tqdm(range(num_samples)):
+
+			# Define new node features dataset (we only modify x_v for now)
+			# Store index of features that are not sampled (z_j=0)
+			feats_id = []
+			for j in range(self.F):
+				if z_[i, j].item() == 0:
+					feats_id.append(feat_idx[j].item())
+			excluded_feat[i] = feats_id
+
+			# Define new neighbourhood
+			# Store index of neighbours that need to be isolated (not sampled, z_j=0)
+			nodes_id = []
+			for j in range(D):
+				if z_[i, self.F+j] == 0:
+					nodes_id.append(self.neighbours[j].item())
+			# Dico with key = num_sample id, value = excluded neighbour index
+			excluded_nei[i] = nodes_id
+
+		# Init label f(z) for graphshap dataset - consider all classes
+		fz = torch.zeros((num_samples, self.data.num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
+
+		# Create new matrix A and X - for each sample ≈ reform z from z'
+		for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
+
+			positions = []
+			# For each excluded neighbour, retrieve the column index of its occurences
+			# in the adj matrix - store them in positions (list)
+			for val in ex_nei:
+				pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
+				positions += pos
+			# Create new adjacency matrix for that sample
+			positions = list(set(positions))
+			A = np.array(self.data.edge_index)
+			A = np.delete(A, positions, axis=1)
+			A = torch.tensor(A)
+
+			# Change feature vector for node of interest
+			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
+			X = deepcopy(self.data.x)
+
+			X[node_index, ex_feat] = av_feat_values[ex_feat]
+			for val in ex_feat:
+				X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
+
+			# Special case - consider only nei. influence if too few feat included
+			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
+				# Look at the 2-hop neighbours included
+				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
+				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+				for incl_nei in included_nei:
+					# Look at nodes connecting it to v
+					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
+																node_idx=torch.tensor([incl_nei]),
+																num_hops=1,
+																edge_index=self.data.edge_index)
+					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
+					w = np.intersect1d(w, one_hop_neighbours)
+
+					if set(w).intersection(ex_nei) == set(w):
+						#np.intersect1d(w, ex_nei)==w:
+						w = random.choice(w)
+						A = torch.cat((A, torch.tensor(
+						    [[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
+					X[w, :] = av_feat_values
+
+			# Apply model on (X,A) as input.
+			with torch.no_grad():
+				proba = self.model(x=X, edge_index=A).exp()[node_index]
+
+			# Store final class prediction and confience level
+			pred_confidence[key], classes_labels[key] = torch.topk(
+				proba, k=1)  # optional
+			# NOTE: maybe only consider predicted class for explanations
+
+			# Store predicted class label in fz
+			fz[key] = proba
+
+		return fz
+
+	def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+		""" Construct z from z' and compute prediction f(z) for each sample z'
+			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+
+		Args:
+				Variables are defined exactly as defined in explainer function
+
+		Returns:
+				(tensor): f(z) - probability of belonging to each target classes, for all samples z
+				Dimension (N * C) where N is num_samples and C num_classses.
+		"""
+		if args_feat == 'Null':
+			av_feat_values = torch.zeros(self.data.x.size(1))
+		else:
+			av_feat_values = self.data.x.mean(dim=0)
+
+		# or random feature vector made of random value across each col of X
+		excluded_feat = {}
+		excluded_nei = {}
+
+		# Define excluded_feat and excluded_nei for each z'
+		for i in tqdm(range(num_samples)):
+
+			# Define new node features dataset (we only modify x_v for now)
+			# Store index of features that are not sampled (z_j=0)
+			feats_id = []
+			for j in range(self.F):
+				if z_[i, j].item() == 0:
+					feats_id.append(feat_idx[j].item())
+			excluded_feat[i] = feats_id
+
+			# Define new neighbourhood
+			# Store index of neighbours that need to be isolated (not sampled, z_j=0)
+			nodes_id = []
+			for j in range(D):
+				if z_[i, self.F+j] == 0:
+					nodes_id.append(self.neighbours[j].item())
+			# Dico with key = num_sample id, value = excluded neighbour index
+			excluded_nei[i] = nodes_id
+
+		# Init label f(z) for graphshap dataset - consider all classes
+		fz = torch.zeros((num_samples, self.data.num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
+
+		# Create new matrix A and X - for each sample ≈ reform z from z'
+		for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
+
+			positions = []
+			# For each excluded neighbour, retrieve the column index of its occurences
+			# in the adj matrix - store them in positions (list)
+			for val in ex_nei:
+				pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
+				positions += pos
+			# Create new adjacency matrix for that sample
+			positions = list(set(positions))
+			A = np.array(self.data.edge_index)
+			A = np.delete(A, positions, axis=1)
+			A = torch.tensor(A)
+
+			# Change feature vector for node of interest
+			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
+			X = deepcopy(self.data.x)
+
+			for val in ex_feat:
+				X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
+				X[node_index, val] = av_feat_values[val]
+
+			# Apply model on (X,A) as input.
+			with torch.no_grad():
+				proba = self.model(x=X, edge_index=A).exp()[node_index]
+
+			# Store final class prediction and confience level
+			pred_confidence[key], classes_labels[key] = torch.topk(
+				proba, k=1)  # optional
+			# NOTE: maybe only consider predicted class for explanations
+
+			# Store predicted class label in fz
+			fz[key] = proba
+
+		return fz
+
+	def node_specific(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+		""" Construct z from z' and compute prediction f(z) for each sample z'
+			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+
+		Args: 
+				Variables are defined exactly as defined in explainer function 
+
+		Returns: 
+				(tensor): f(z) - probability of belonging to each target classes, for all samples z
+				Dimension (N * C) where N is num_samples and C num_classses. 
+		"""
+		# We need to recover z from z' - wrt sampled neighbours and node features
+		# Initialise new node feature vectors and neighbours to disregard
+		if args_feat == 'Null':
+			av_feat_values = torch.zeros(self.data.x.size(1))
+		else:
+			av_feat_values = self.data.x.mean(dim=0)
+		# or random feature vector made of random value across each col of X
+		
+		excluded_feat = {}
+		excluded_nei = {}
+
+		# Define excluded_feat and excluded_nei for each z'
+		for i in tqdm(range(num_samples)):
+
+			# Define new node features dataset (we only modify x_v for now)
+			# Store index of features that are not sampled (z_j=0)
+			feats_id = []
+			for j in range(self.F):
+				if z_[i, j].item() == 0:
+					feats_id.append(feat_idx[j].item())
+			excluded_feat[i] = feats_id
+
+			# Define new neighbourhood
+			# Store index of neighbours that need to be isolated (not sampled, z_j=0)
+			nodes_id = []
+			for j in range(D):
+				if z_[i, self.F+j] == 0:
+					nodes_id.append(self.neighbours[j].item())
+			# Dico with key = num_sample id, value = excluded neighbour index
+			excluded_nei[i] = nodes_id
+
+		# Init label f(z) for graphshap dataset - consider all classes
+		fz = torch.zeros((num_samples, self.data.num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
+
+		# Create new matrix A and X - for each sample ≈ reform z from z'
+		for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
+
+			positions = []
+			# For each excluded neighbour, retrieve the column index of its occurences
+			# in the adj matrix - store them in positions (list)
+			for val in ex_nei:
+				pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
+				positions += pos
+			# Create new adjacency matrix for that sample
+			positions = list(set(positions))
+			A = np.array(self.data.edge_index)
+			A = np.delete(A, positions, axis=1)
+			A = torch.tensor(A)
+
+			# Change feature vector for node of interest
+			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
+			X = deepcopy(self.data.x)
+
+			# Special case - consider only nei. influence if too few feat included
+			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):	
+				X[node_index, ex_feat] = av_feat_values[ex_feat]
+
+				# Look at the 2-hop neighbours included
+				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
+				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+				for incl_nei in included_nei: 
+					# Look at nodes connecting it to v 
+					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
+																node_idx=torch.tensor([incl_nei]),
+																num_hops=1,
+																edge_index=self.data.edge_index)
+					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
+					w = np.intersect1d(w, one_hop_neighbours)
+					
+					if set(w).intersection(ex_nei) == set(w):
+						#np.intersect1d(w, ex_nei)==w:
+						w = random.choice(w)
+						A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
+					X[w,:]= av_feat_values		
+		
+			# Usual case - node index only
+			else:	
+				X[node_index, ex_feat] = av_feat_values[ex_feat]
+
+			# Apply model on (X,A) as input.
+			with torch.no_grad():
+				proba = self.model(x=X, edge_index=A).exp()[node_index]
+
+			# Store final class prediction and confience level
+			pred_confidence[key], classes_labels[key] = torch.topk(
+				proba, k=1)  # optional
+			# NOTE: maybe only consider predicted class for explanations
+
+			# Store predicted class label in fz
+			fz[key] = proba
+
+		return fz
+
+	def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+		""" Construct z from z' and compute prediction f(z) for each sample z'
+			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+
+		Args:
+				Variables are defined exactly as defined in explainer function
+
+		Returns:
+				(tensor): f(z) - probability of belonging to each target classes, for all samples z
+				Dimension (N * C) where N is num_samples and C num_classses.
+		"""
+		# Initialise new node feature vectors and neighbours to disregard
+		if args_feat == 'Null':
+			av_feat_values = torch.zeros(self.data.x.size(1))
+		else: 
+			av_feat_values = self.data.x.mean(dim=0)
+		
+		# or random feature vector made of random value across each col of X 
+
+		excluded_feat = {}
+		excluded_nei = {}
+
+		# Define excluded_feat and excluded_nei for each z'
+		for i in tqdm(range(num_samples)):
+
+			# Define new node features dataset (we only modify x_v for now)
+			# Store index of features that are not sampled (z_j=0)
+			feats_id = []
+			for j in range(self.F):
+				if z_[i, j].item() == 0:
+					feats_id.append(feat_idx[j].item())
+			excluded_feat[i] = feats_id
+
+			# Define new neighbourhood
+			# Store index of neighbours that need to be isolated (not sampled, z_j=0)
+			nodes_id = []
+			for j in range(D):
+				if z_[i, self.F+j] == 0:
+					nodes_id.append(self.neighbours[j].item())
+			# Dico with key = num_sample id, value = excluded neighbour index
+			excluded_nei[i] = nodes_id
+
+		# Init label f(z) for graphshap dataset - consider all classes
+		fz = torch.zeros((num_samples, self.data.num_classes))
+		# Init final predicted class for each sample (informative)
+		classes_labels = torch.zeros(num_samples)
+		pred_confidence = torch.zeros(num_samples)
+
+		# Create new matrix A and X - for each sample ≈ reform z from z'
+		for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
+
+			# Change feature vector for node of interest
+			X = deepcopy(self.data.x)
+
+			# For each excluded neighbour, retrieve the column index of its occurences
+			# in the adj matrix - store them in positions (list)
+			A = self.data.edge_index
+			X[ex_nei,:]=av_feat_values.repeat(len(ex_nei),1)
+			# Only for node index
+			X[node_index, ex_feat] = av_feat_values[ex_feat]
 				
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
@@ -389,7 +854,6 @@ class GraphSHAP():
 
 		phi, base_value = [param.T for _,param in our_model.named_parameters()]
 		return phi.detach().numpy().astype('float64'), base_value
-
 
 	def OLS(self, z_, weights, fz):
 		""" Ordinary Least Squares Method, weighted

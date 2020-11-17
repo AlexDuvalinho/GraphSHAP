@@ -38,7 +38,7 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_index=0,
 		hops=2,
-		num_samples=1000,
+		num_samples=500,
 	)
 
 	return parser.parse_args()
