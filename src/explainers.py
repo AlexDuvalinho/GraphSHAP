@@ -2,6 +2,7 @@
 
 	Define the different explainers: GraphSHAP + benchmarks
 """
+from sklearn.linear_model import LinearRegression
 
 from src.train import accuracy
 from src.models import LinearRegressionModel
@@ -65,7 +66,7 @@ class GraphSHAP():
 		args_hv = 'compute_pred' # 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
 		args_feat = 'Null'  # 'All', 'Expectation', 'Null'
 		args_coal = 'Smarter'  # 'Smarter', 'Smart', 'Random'
-		args_g = 'WLS' # WLS , OLS
+		args_g = 'WLS' # WLS , OLS, sklearn
 
 		# Time
 		start = time.time()
@@ -142,6 +143,8 @@ class GraphSHAP():
 		#fz = self.compute_pred(node_index, num_samples, D, z_,
 		#                       feat_idx, one_hop_neighbours, args_K, args_feat)
 		
+		phi, base_value = self.sklearn_OLS(z_, weights, fz[:,true_pred])
+
 		# Weighted linear regression 
 		phi, base_value = self.WLR(z_, weights, fz)
 
@@ -176,8 +179,8 @@ class GraphSHAP():
 		# Define empty and full coalitions
 		z_ = torch.ones(num_samples, self.M)
 		z_[1::2] = torch.zeros(num_samples//2, self.M)
-		k = 1
 		i = 2
+		k = 1
 		# Loop until all samples are created
 		while i < num_samples:
 			# Look at each feat/nei individually if have enough sample
@@ -219,7 +222,7 @@ class GraphSHAP():
 
 				# Sample random coalitions 
 				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
-
+		
 		return z_
 	
 	def coalition_sampler(self, num_samples):
@@ -301,7 +304,7 @@ class GraphSHAP():
 			a = s[i].item()
 			# Put an emphasis on samples where all or none features are included
 			if a == 0 or a == self.M:
-				shap_kernel.append(10000)
+				shap_kernel.append(1000)
 			elif scipy.special.binom(self.M, a) == float('+inf'):
 				shap_kernel.append(1)
 			else:
@@ -854,6 +857,23 @@ class GraphSHAP():
 
 		phi, base_value = [param.T for _,param in our_model.named_parameters()]
 		return phi.detach().numpy().astype('float64'), base_value
+	
+	def sklearn_OLS(self, z_, weights, fz):
+		# Convert to numpy
+		weights = weights.detach().numpy()
+		z_ = z_.detach().numpy()
+		fz = fz.detach().numpy()
+		# Fit weighted linear regression
+		reg = LinearRegression()
+		reg.fit(z_, fz, weights)
+		y_pred = reg.predict(z_)
+		# Assess perf
+		print('weighted r2: ', reg.score(z_, fz, sample_weight=weights))
+		print('r2: ', r2_score(fz, y_pred))
+		# Coefficients
+		phi = reg.coef_
+		base_value = reg.intercept_
+		return phi, base_value
 
 	def OLS(self, z_, weights, fz):
 		""" Ordinary Least Squares Method, weighted
@@ -879,7 +899,7 @@ class GraphSHAP():
 			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
 			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1])))
 		phi = np.dot(tmp, np.dot(
-			np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
+						np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 		return phi[:-1,:], phi[-1,:]
 
 	def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf):
