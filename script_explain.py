@@ -30,6 +30,16 @@ def build_arguments():
 						help="number k for k-hops neighbours considered in an explanation")
 	parser.add_argument("--num_samples", type=int,
 						help="number of coalitions sampled and used to approx shapley values")
+	parser.add_argument("--hv", type=str,
+                     help="way simplified input is translated to the original input space")
+	parser.add_argument("--feat", type=str,
+                     help="node features considered for hv above")
+	parser.add_argument("--coal", type=str,
+                     help="type of coalition sampler")
+	parser.add_argument("--g", type=str,
+                     help="method used to train g on derived dataset")
+	parser.add_argument("--multiclass", type=bool,
+                     help='False if we consider explanations for the predicted class only')
 
 	parser.set_defaults(
 		model='GCN',
@@ -38,11 +48,20 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_index=0,
 		hops=2,
-		num_samples=500,
+		num_samples=100,
+		hv='compute_pred',
+		feat='Null',
+		coal='Random',
+		g='Linear',
+		multiclass=False,
 	)
 
 	return parser.parse_args()
 
+# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
+# args_feat: 'All', 'Expectation', 'Null'
+# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus'
+# args_g: 'WLR', WLS, WLR_sklearn
 
 def fix_seed(seed):
 	random.seed(seed)
@@ -78,11 +97,18 @@ def main():
 	explanations = explainer.explain(node_index=args.node_index,
 									 hops=args.hops,
 									 num_samples=args.num_samples,
-									 info=True)
+									 info=True,
+									 args_hv=args.hv,
+									 args_feat=args.feat,
+									 args_coal=args.coal,
+									 args_g=args.g,
+									 multiclass=args.multiclass)
 
 	print(explanations.shape)
-	print('g(x_): ', sum(explanations[:,3]))
-
+	if args.multiclass:
+		print('g(x_): ', sum(explanations[:,3]))
+	else:
+		print('g(x_): ', sum(explanations))
 
 if __name__ == "__main__":
 	main()

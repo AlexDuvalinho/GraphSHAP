@@ -45,7 +45,15 @@ class GraphSHAP():
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
+	def explain(self, node_index=0, 
+						hops=2, 
+						num_samples=10,
+						info=True,
+						args_hv='compute_pred',
+						args_feat='Null', 
+						args_coal='Smarter', 
+						args_g = 'WLR',
+						multiclass=False):
 		""" Explain prediction for a particular node - GraphSHAP method
 
 		Args:
@@ -63,10 +71,6 @@ class GraphSHAP():
 		# Define K - range of endcases considered
 		args_K = 3
 		# Smarter coalitions sampling, k-hop nei, 'Default' behaviour h_v at endpoints
-		args_hv = 'compute_pred' # 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
-		args_feat = 'Null'  # 'All', 'Expectation', 'Null'
-		args_coal = 'Smarter'  # 'Smarter', 'Smart', 'Random'
-		args_g = 'WLS' # WLS , OLS, sklearn
 
 		# Time
 		start = time.time()
@@ -120,6 +124,8 @@ class GraphSHAP():
 		# Sample z' - binary vector of dimension (num_samples, M)
 		if args_coal == 'Smarter':
 			z_ = self.smarter_coalition_sampler(num_samples, args_K)
+		elif args_coal == 'Smarterplus':
+			z_ = self.smarter_plus_coalition_sampler(num_samples, args_K)
 		elif args_coal == 'Smart':
 			z_ = self.coalition_sampler(num_samples)
 		else:
@@ -135,35 +141,105 @@ class GraphSHAP():
 
 		# Define weights associated with each sample using shapley kernel formula
 		weights = self.shapley_kernel(s)
-
+		if max(weights) > 9:
+			print('!! Empty or/and full coalition is included !!')
+			
 		# Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
 		fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
                             feat_idx, one_hop_neighbours, args_K, args_feat)
-		#fz = self.compute_pred(node_index, num_samples, D, z_,
-		#                       feat_idx, one_hop_neighbours, args_K, args_feat)
 		
-		phi, base_value = self.sklearn_OLS(z_, weights, fz[:,true_pred])
+		if not multiclass: 
+			fz = fz[:, true_pred]
+		
+		# WLR with sklearn 
+		if args_g == 'WLR_sklearn':
+			phi, base_value = self.sklearn_WLR(z_, weights, fz)
 
-		# Weighted linear regression 
-		phi, base_value = self.WLR(z_, weights, fz)
+		# Weighted linear regression - Multiclass
+		elif args_g == 'WLR':
+			phi, base_value = self.WLR(z_, weights, fz, multiclass)
 
 		# OLS estimator for weighted linear regression
-		# phi, base_value = self.OLS(z_, weights, fz)  # dim (M*num_classes)
-		print('Base value', base_value[true_pred], 'for class ', true_pred.item())
+		else:
+			phi, base_value = self.WLS(z_, weights, fz)  # dim (M*num_classes)
+		
+		print('Base value', base_value, 'for class ', true_pred.item())
 
 		# Print some information
 		if info:
-			self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf)
+			self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
 
 		# Visualisation
-			self.vizu(edge_mask, node_index, phi, true_pred, hops)
+			self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
 		
 		# Time
 		end = time.time()
 		print('Time: ', end - start)
 
 		return phi
+
+
+	def smarter_plus_coalition_sampler(self, num_samples, args_K):
+		""" Sample coalitions cleverly given shapley kernel def
+		Consider nodes and features separately to better capture their effect
+
+		Args:
+			num_samples ([int]): total number of coalitions z_
+			args_K: max size of coalitions favoured in sampling 
+
+		Returns:
+			[tensor]: z_ in {0,1}^F x {0,1}^D (num_samples x self.M)
+		"""
+		# Define empty and full coalitions
+		z_ = torch.ones(num_samples, self.M)
+		z_[1::2] = torch.zeros(num_samples//2, self.M)
+		# No coalitions
+		i = 0 
+		k = 1
+		# Loop until all samples are created
+		while i < num_samples:
+			# Look at each feat/nei individually if have enough sample
+			# Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
+			if i + 2 * self.M < num_samples and k == 1:
+				z_[i:i+self.M, :] = torch.ones(self.M, self.M)
+				z_[i:i+self.M, :].fill_diagonal_(0)
+				z_[i+self.M:i+2*self.M, :] = torch.zeros(self.M, self.M)
+				z_[i+self.M:i+2*self.M, :].fill_diagonal_(1)
+				i += 2 * self.M
+				k += 1
+
+			else:
+				# Split in two number of remaining samples
+				# Half for specific coalitions with low k and rest random samples
+				samp = i + 2*(num_samples - i)//3
+				while i<samp and k<=min(args_K, self.F, self.M-self.F):
+					# Sample coalitions of k1 neighbours or k1 features without repet and order. 
+					L = list( combinations(range(self.F),k) ) + list( combinations(range(self.F,self.M), k) )
+					random.shuffle(L)
+					L = L[:samp+1]
+
+					for j in range(len(L)):
+						# Coalitions (All nei, All-k feat) or (All feat, All-k nei)
+						z_[i, L[j]] = torch.zeros(k)
+						i += 1
+						# If limit reached, sample random coalitions
+						if i == samp:
+							z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+							return z_
+						# Coalitions (No nei, k feat) or (No feat, k nei)
+						z_[i, L[j]] = torch.ones(k)
+						i += 1
+						# If limit reached, sample random coalitions
+						if i == samp:
+							z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+							return z_
+					k += 1
+
+				# Sample random coalitions 
+				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+		
+		return z_
 
 	def smarter_coalition_sampler(self, num_samples, args_K):
 		""" Sample coalitions cleverly given shapley kernel def
@@ -179,7 +255,8 @@ class GraphSHAP():
 		# Define empty and full coalitions
 		z_ = torch.ones(num_samples, self.M)
 		z_[1::2] = torch.zeros(num_samples//2, self.M)
-		i = 2
+		# z_[1, :] = torch.empty(1, self.M).random_(2)
+		i = 2 
 		k = 1
 		# Loop until all samples are created
 		while i < num_samples:
@@ -282,8 +359,8 @@ class GraphSHAP():
 	
 	def random_coalition_sampler(self, num_samples):
 		z_ = torch.empty(num_samples, self.M).random_(2)
-		z_[0, :] = torch.ones(self.M)
-		z_[1, :] = torch.zeros(self.M)
+		# z_[0, :] = torch.ones(self.M)
+		# z_[1, :] = torch.zeros(self.M)
 		return z_
 		
 
@@ -304,7 +381,7 @@ class GraphSHAP():
 			a = s[i].item()
 			# Put an emphasis on samples where all or none features are included
 			if a == 0 or a == self.M:
-				shap_kernel.append(1000)
+				shap_kernel.append(100)
 			elif scipy.special.binom(self.M, a) == float('+inf'):
 				shap_kernel.append(1)
 			else:
@@ -802,7 +879,8 @@ class GraphSHAP():
 
 		return fz
 	
-	def WLR(self, z_, weights, fz):
+
+	def WLR(self, z_, weights, fz, multiclass):
 		"""Train a weighted linear regression
 
 		Args:
@@ -811,21 +889,24 @@ class GraphSHAP():
 			fz (torch.tensor): y data 
 		"""
 		# Define model 
-		our_model = LinearRegressionModel(z_.shape[1], self.data.num_classes)
+		if multiclass: 
+			our_model = LinearRegressionModel(z_.shape[1], self.data.num_classes)
+		else:
+			our_model = LinearRegressionModel(z_.shape[1], 1)
 
 		# Define optimizer and loss function
 		def weighted_mse_loss(input, target, weight):
 			return (weight * (input - target) ** 2).mean()
 
 		criterion = torch.nn.MSELoss()
-		optimizer = torch.optim.SGD(our_model.parameters(), lr=0.01)
+		optimizer = torch.optim.SGD(our_model.parameters(), lr=0.4)
 
 		# Dataloader 
 		train = torch.utils.data.TensorDataset(z_, fz)
 		train_loader = torch.utils.data.DataLoader(train, batch_size=1)
 		
 		# Repeat for several epochs
-		for epoch in range(10):
+		for epoch in range(50):
 
 			av_loss = []
 			#for x,y,w in zip(z_,fz, weights):
@@ -836,8 +917,8 @@ class GraphSHAP():
 				pred_y = our_model(x)
 
 				# Compute loss
-				# loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
-				loss = criterion(pred_y,y)
+				loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
+				# loss = criterion(pred_y,y)
 				
 				# Zero gradients, perform a backward pass, and update the weights.
 				optimizer.zero_grad()
@@ -852,13 +933,23 @@ class GraphSHAP():
 		our_model.eval()
 		with torch.no_grad():
 			pred = our_model(z_)  
-		print('r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
-		print(r2_score(pred, fz, multioutput='raw_values'))
+		print('weighted r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
+		if multiclass: 
+			print(r2_score(pred, fz, multioutput='raw_values'))
+		print('r2 score: ', r2_score(pred, fz, weights))
 
 		phi, base_value = [param.T for _,param in our_model.named_parameters()]
+		phi = np.squeeze(phi, axis=1)
 		return phi.detach().numpy().astype('float64'), base_value
 	
-	def sklearn_OLS(self, z_, weights, fz):
+	def sklearn_WLR(self, z_, weights, fz):
+		"""Train a weighted linear regression
+
+		Args:
+			z_ (torch.tensor): data
+			weights (torch.tensor): weights of each sample
+			fz (torch.tensor): y data 
+		"""
 		# Convert to numpy
 		weights = weights.detach().numpy()
 		z_ = z_.detach().numpy()
@@ -875,7 +966,7 @@ class GraphSHAP():
 		base_value = reg.intercept_
 		return phi, base_value
 
-	def OLS(self, z_, weights, fz):
+	def WLS(self, z_, weights, fz):
 		""" Ordinary Least Squares Method, weighted
 			Estimates shapely value coefficients
 
@@ -897,12 +988,19 @@ class GraphSHAP():
 		except np.linalg.LinAlgError:  # matrix not invertible
 			print('WLS: Matrix not invertible')
 			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
-			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1])))
+			tmp = np.linalg.inv(tmp + np.diag(0.01 * np.random.randn(tmp.shape[1])))
 		phi = np.dot(tmp, np.dot(
 						np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
-		return phi[:-1,:], phi[-1,:]
 
-	def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf):
+		# Test accuracy 
+		y_pred=z_.detach().numpy() @ phi
+		print('r2: ', r2_score(fz, y_pred))
+		print('weighted r2: ', r2_score(fz, y_pred, weights))
+
+		return phi[:-1], phi[-1]
+
+
+	def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf, multiclass):
 		"""
 		Displays some information about explanations - for a better comprehension and audit
 		"""
@@ -916,7 +1014,11 @@ class GraphSHAP():
 			  .format(true_pred, true_conf, self.data.y[node_index]))
 
 		# Isolate explanations for predicted class - explain model choices
-		pred_explanation = phi[:, true_pred]
+		if multiclass: 
+			pred_explanation = phi[:, true_pred]
+		else: 
+			pred_explanation = phi
+		
 		# print('Explanation for the class predicted by the model:', pred_explanation)
 
 		# Look at repartition of weights among neighbours and node features
@@ -970,7 +1072,7 @@ class GraphSHAP():
 			print('Most influential neighbours: ', [
 				  (item[0].item(), item[1].item()) for item in list(influential_nei.items())])
 
-	def vizu(self, edge_mask, node_index, phi, predicted_class, hops):
+	def vizu(self, edge_mask, node_index, phi, predicted_class, hops, multiclass):
 		""" Vizu of important nodes in subgraph around node_index
 
 		Args:
@@ -980,7 +1082,13 @@ class GraphSHAP():
 			phi ([type]): explanations for node of interest
 			predicted_class ([type]): class predicted by model for node of interest 
 			hops ([type]):  number of hops considered for subgraph around node of interest 
+			multiclass: if we look at explanations for all classes or only for the predicted one
 		"""
+		if multiclass: 
+			phi = torch.tensor(phi[:,predicted_class])
+		else:
+			phi = torch.from_numpy(phi).float()
+
 		# Replace False by 0, True by 1 in edge_mask
 		mask = torch.zeros(self.data.edge_index.shape[1])
 		for i, val in enumerate(edge_mask):
@@ -999,11 +1107,11 @@ class GraphSHAP():
 				# Remove importance of 1-hop neighbours to 2-hop nei.
 				if nei in one_hop_nei:
 					if self.data.edge_index[1, idx] in one_hop_nei:
-						mask[idx] = phi[self.F + i, predicted_class]
+						mask[idx] = phi[self.F + i]
 					else:
 						pass
 				elif mask[idx] == 1:
-					mask[idx] = phi[self.F + i, predicted_class]
+					mask[idx] = phi[self.F + i]
 			#mask[mask.nonzero()[i].item()]=phi[i, predicted_class]
 
 		# Set to 0 importance of edges related to 0
@@ -1027,7 +1135,7 @@ class GraphSHAP():
 					bbox_inches='tight')
 
 		# Other visualisation 
-		G = denoise_graph(self.data, mask, phi[self.F:,predicted_class], self.neighbours, node_index, feat=None, label=self.data.y, threshold_num=10)
+		G = denoise_graph(self.data, mask, phi[self.F:], self.neighbours, node_index, feat=None, label=self.data.y, threshold_num=10)
 		
 		log_graph(G,
 					identify_self=True,
