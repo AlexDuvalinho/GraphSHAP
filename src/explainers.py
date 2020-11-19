@@ -92,16 +92,13 @@ class GraphSHAP():
 															num_hops=1,
 															edge_index=self.data.edge_index)
 
-			# Remove node v index from neighbours and store their number in D
-			self.neighbours = self.neighbours[self.neighbours != node_index]
-			D = self.neighbours.shape[0]
-
 			# Determine z' => features and neighbours whose importance is investigated
 			if args_feat == 'Null':
 			# Number of non-zero entries for the feature vector x_v
-				self.F = self.data.x[node_index, :][self.data.x[node_index, :] != 0].shape[0]
+				feat_idx = self.data.x[self.neighbours, :].mean(axis=0).nonzero()
 				# Store indexes of these non zero feature values
-				feat_idx = torch.nonzero(self.data.x[node_index, :])
+				self.F = feat_idx.size()[0]
+				# self.F = self.data.x[node_index, :][self.data.x[node_index, :] != 0].shape[0]
 
 			# Consider all features
 			elif args_feat == 'All':
@@ -111,17 +108,21 @@ class GraphSHAP():
 			else: 
 				# Discard variables whose aggregated value approaches in the subgraph
 				# approaches the exptected value 
-				var = self.data.x.var(axis=0)
+				var = self.data.x.std(axis=0)
 				mean = self.data.x.mean(axis=0)
 				mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
-				mean_subgraph = torch.where(mean - var < mean_subgraph, mean_subgraph,
-							torch.zeros_like(mean_subgraph))
-				mean_subgraph = torch.where(mean_subgraph < mean+var, mean_subgraph,
-							torch.zeros_like(mean_subgraph))
-				feat_idx = mean_subgraph.nonzero() 
+				mean_subgraph = torch.where(mean_subgraph > mean - 0.25*var, mean_subgraph,
+							torch.ones_like(mean_subgraph)*100)
+				mean_subgraph = torch.where(mean_subgraph < mean + 0.25*var, mean_subgraph,
+							torch.ones_like(mean_subgraph)*100)
+				# mean_subgraph = mean_subgraph - 100 * torch.ones_like(mean_subgraph)
+				feat_idx = (mean_subgraph == 100).nonzero()
 				self.F = feat_idx.shape[0]
 				del mean, mean_subgraph, var
 
+			# Remove node v index from neighbours and store their number in D
+			self.neighbours = self.neighbours[self.neighbours != node_index]
+			D = self.neighbours.shape[0]
 
 			# Total number of features + neighbours considered for node v
 			self.M = self.F+D

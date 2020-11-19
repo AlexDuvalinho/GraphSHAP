@@ -48,10 +48,10 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_indexes=[0,10],
 		hops=2,
-		num_samples=100,
+		num_samples=1000,
 		hv='compute_pred',
 		feat='Expectation',
-		coal='Smarter',
+		coal='SmarterPlus',
 		g='WLS',
 		multiclass=False,
 	)
