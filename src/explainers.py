@@ -46,7 +46,7 @@ class GraphSHAP():
 
 		self.model.eval()
 
-	def explain(self, node_index=0, 
+	def explain(self, node_indexes=[0], 
 						hops=2, 
 						num_samples=10,
 						info=True,
@@ -76,112 +76,118 @@ class GraphSHAP():
 		# Time
 		start = time.time()
 
-		# Construct k hop subgraph of node of interest (denoted v)
-		self.neighbours, _, _, edge_mask =\
-			torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-												 num_hops=hops,
-												 edge_index=self.data.edge_index)
-		# Store the indexes of the neighbours of v (+ index of v itself)
-	
-		one_hop_neighbours, _, _, _ =\
-					torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-														 num_hops=1,
-														 edge_index=self.data.edge_index)
+		# Accept a subset of nodes 
+		phi_list = []
+		for node_index in node_indexes: 
 
-		# Remove node v index from neighbours and store their number in D
-		self.neighbours = self.neighbours[self.neighbours != node_index]
-		D = self.neighbours.shape[0]
+			# Construct k hop subgraph of node of interest (denoted v)
+			self.neighbours, _, _, edge_mask =\
+				torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+													num_hops=hops,
+													edge_index=self.data.edge_index)
+			# Store the indexes of the neighbours of v (+ index of v itself)
+		
+			one_hop_neighbours, _, _, _ =\
+						torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+															num_hops=1,
+															edge_index=self.data.edge_index)
 
-		# Determine z' => features and neighbours whose importance is investigated
-		if args_feat == 'Null':
-		# Number of non-zero entries for the feature vector x_v
-			self.F = self.data.x[node_index, :][self.data.x[node_index, :] != 0].shape[0]
-			# Store indexes of these non zero feature values
-			feat_idx = torch.nonzero(self.data.x[node_index, :])
+			# Remove node v index from neighbours and store their number in D
+			self.neighbours = self.neighbours[self.neighbours != node_index]
+			D = self.neighbours.shape[0]
 
-		# Consider all features
-		elif args_feat == 'All':
-			self.F = self.data.x[node_index, :].shape[0]
-			feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+			# Determine z' => features and neighbours whose importance is investigated
+			if args_feat == 'Null':
+			# Number of non-zero entries for the feature vector x_v
+				self.F = self.data.x[node_index, :][self.data.x[node_index, :] != 0].shape[0]
+				# Store indexes of these non zero feature values
+				feat_idx = torch.nonzero(self.data.x[node_index, :])
 
-		else: 
-			# Discard variables whose aggregated value approaches in the subgraph
-			# approaches the exptected value 
-			var = self.data.x.var(axis=0)
-			mean = self.data.x.mean(axis=0)
-			mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
-			mean_subgraph = torch.where(mean - var < mean_subgraph, mean_subgraph,
-						torch.zeros_like(mean_subgraph))
-			mean_subgraph = torch.where(mean_subgraph < mean+var, mean_subgraph,
-						torch.zeros_like(mean_subgraph))
-			feat_idx = mean_subgraph.nonzero() 
-			self.F = feat_idx.shape[0]
-			del mean, mean_subgraph, var
+			# Consider all features
+			elif args_feat == 'All':
+				self.F = self.data.x[node_index, :].shape[0]
+				feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+
+			else: 
+				# Discard variables whose aggregated value approaches in the subgraph
+				# approaches the exptected value 
+				var = self.data.x.var(axis=0)
+				mean = self.data.x.mean(axis=0)
+				mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
+				mean_subgraph = torch.where(mean - var < mean_subgraph, mean_subgraph,
+							torch.zeros_like(mean_subgraph))
+				mean_subgraph = torch.where(mean_subgraph < mean+var, mean_subgraph,
+							torch.zeros_like(mean_subgraph))
+				feat_idx = mean_subgraph.nonzero() 
+				self.F = feat_idx.shape[0]
+				del mean, mean_subgraph, var
 
 
-		# Total number of features + neighbours considered for node v
-		self.M = self.F+D
+			# Total number of features + neighbours considered for node v
+			self.M = self.F+D
+				
+			# Sample z' - binary vector of dimension (num_samples, M)
+			if args_coal == 'Smarter':
+				z_ = self.smarter_coalition_sampler(num_samples, args_K)
+			elif args_coal == 'Smarterplus':
+				z_ = self.smarter_plus_coalition_sampler(num_samples, args_K)
+			elif args_coal == 'Smart':
+				z_ = self.coalition_sampler(num_samples)
+			else:
+				z_ = self.random_coalition_sampler(num_samples)
 			
-		# Sample z' - binary vector of dimension (num_samples, M)
-		if args_coal == 'Smarter':
-			z_ = self.smarter_coalition_sampler(num_samples, args_K)
-		elif args_coal == 'Smarterplus':
-			z_ = self.smarter_plus_coalition_sampler(num_samples, args_K)
-		elif args_coal == 'Smart':
-			z_ = self.coalition_sampler(num_samples)
-		else:
-			z_ = self.random_coalition_sampler(num_samples)
-		
-		# Compute |z'| for each sample z'
-		s = (z_ != 0).sum(dim=1)
+			# Compute |z'| for each sample z'
+			s = (z_ != 0).sum(dim=1)
 
-		# Compute true prediction of model, for original instance
-		with torch.no_grad():
-			true_conf, true_pred = self.model(
-				x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+			# Compute true prediction of model, for original instance
+			with torch.no_grad():
+				true_conf, true_pred = self.model(
+					x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
 
-		# Define weights associated with each sample using shapley kernel formula
-		weights = self.shapley_kernel(s)
-		if max(weights) > 9:
-			print('!! Empty or/and full coalition is included !!')
+			# Define weights associated with each sample using shapley kernel formula
+			weights = self.shapley_kernel(s)
+			if max(weights) > 9:
+				print('!! Empty or/and full coalition is included !!')
+				
+			# Create dataset (z', f(z)), stored as (z_, fz)
+			# Retrive z from z' and x_v, then compute f(z)
+			fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
+								feat_idx, one_hop_neighbours, args_K, args_feat)
 			
-		# Create dataset (z', f(z)), stored as (z_, fz)
-		# Retrive z from z' and x_v, then compute f(z)
-		fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-                            feat_idx, one_hop_neighbours, args_K, args_feat)
-		
-		if not multiclass: 
-			fz = fz[:, true_pred]
-		
-		# Weighted Linear Regression to learn shapley values
-		phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass)
+			if not multiclass: 
+				fz = fz[:, true_pred]
+			
+			# Weighted Linear Regression to learn shapley values
+			phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass)
 
-		# # WLR with sklearn 
-		# if args_g == 'WLR_sklearn':
-		# 	phi, base_value = self.sklearn_WLR(z_, weights, fz)
+			# # WLR with sklearn 
+			# if args_g == 'WLR_sklearn':
+			# 	phi, base_value = self.sklearn_WLR(z_, weights, fz)
 
-		# # Weighted linear regression - Multiclass
-		# elif args_g == 'WLR':
-		# 	phi, base_value = self.WLR(z_, weights, fz, multiclass)
+			# # Weighted linear regression - Multiclass
+			# elif args_g == 'WLR':
+			# 	phi, base_value = self.WLR(z_, weights, fz, multiclass)
 
-		# # OLS estimator for weighted linear regression
-		# else:
-		# 	phi, base_value = self.WLS(z_, weights, fz)  # dim (M*num_classes)
-		
-		print('Base value', base_value, 'for class ', true_pred.item())
+			# # OLS estimator for weighted linear regression
+			# else:
+			# 	phi, base_value = self.WLS(z_, weights, fz)  # dim (M*num_classes)
+			
+			print('Base value', base_value, 'for class ', true_pred.item())
 
-		# Print some information
-		if info:
-			self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
+			# Print some information
+			if info:
+				self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
 
-		# Visualisation
-			self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
-		
-		# Time
-		end = time.time()
-		print('Time: ', end - start)
+			# Visualisation
+				self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
+			
+			# Time
+			end = time.time()
+			print('Time: ', end - start)
 
-		return phi
+			phi_list.append(phi)
+
+		return phi_list
 
 
 	def smarter_plus_coalition_sampler(self, num_samples, args_K):
@@ -709,7 +715,7 @@ class GraphSHAP():
 				Dimension (N * C) where N is num_samples and C num_classses. 
 		"""
 		G = torch_geometric.utils.to_networkx(self.data)
-		
+
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
 		if args_feat == 'Null':

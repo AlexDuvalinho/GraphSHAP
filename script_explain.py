@@ -24,8 +24,8 @@ def build_arguments():
 	parser.add_argument("--explainer", type=str,
 						help="Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
 	parser.add_argument("--seed", type=int)
-	parser.add_argument("--node_index", type=int, default=0,
-						help="index of the node whose prediction is explained")
+	parser.add_argument("--node_indexes", type=list, default=[0],
+						help="indexes of the nodes whose prediction are explained")
 	parser.add_argument("--hops", type=int,
 						help="number k for k-hops neighbours considered in an explanation")
 	parser.add_argument("--num_samples", type=int,
@@ -46,11 +46,11 @@ def build_arguments():
 		dataset='Cora',
 		seed=10,
 		explainer='GraphSHAP',
-		node_index=0,
+		node_indexes=[0,10],
 		hops=2,
 		num_samples=100,
-		hv='node_specific',
-		feat='Null',
+		hv='compute_pred',
+		feat='Expectation',
 		coal='Smarter',
 		g='WLS',
 		multiclass=False,
@@ -94,7 +94,7 @@ def main():
 
 	# Explain it with GraphSHAP
 	explainer = eval(args.explainer)(data, model)
-	explanations = explainer.explain(node_index=args.node_index,
+	explanations = explainer.explain(node_indexes=args.node_indexes,
 									 hops=args.hops,
 									 num_samples=args.num_samples,
 									 info=True,
@@ -104,11 +104,14 @@ def main():
 									 args_g=args.g,
 									 multiclass=args.multiclass)
 
-	print(explanations.shape)
-	if args.multiclass:
-		print('g(x_): ', sum(explanations[:,3]))
-	else:
-		print('g(x_): ', sum(explanations))
+	print('number samples: ' ,len(explanations))
+	print('dim expl:' , explanations[0].shape)
+
+	for expl in explanations:
+		if args.multiclass:
+			print('g(x_): ', sum(expl[:,3]))
+		else:
+			print('g(x_): ', sum(expl))
 
 if __name__ == "__main__":
 	main()
