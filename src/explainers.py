@@ -18,6 +18,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.special
+import networkx as nx
 import torch
 import torch_geometric
 from sklearn.linear_model import LassoLars, Ridge, Lasso
@@ -152,17 +153,20 @@ class GraphSHAP():
 		if not multiclass: 
 			fz = fz[:, true_pred]
 		
-		# WLR with sklearn 
-		if args_g == 'WLR_sklearn':
-			phi, base_value = self.sklearn_WLR(z_, weights, fz)
+		# Weighted Linear Regression to learn shapley values
+		phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass)
 
-		# Weighted linear regression - Multiclass
-		elif args_g == 'WLR':
-			phi, base_value = self.WLR(z_, weights, fz, multiclass)
+		# # WLR with sklearn 
+		# if args_g == 'WLR_sklearn':
+		# 	phi, base_value = self.sklearn_WLR(z_, weights, fz)
 
-		# OLS estimator for weighted linear regression
-		else:
-			phi, base_value = self.WLS(z_, weights, fz)  # dim (M*num_classes)
+		# # Weighted linear regression - Multiclass
+		# elif args_g == 'WLR':
+		# 	phi, base_value = self.WLR(z_, weights, fz, multiclass)
+
+		# # OLS estimator for weighted linear regression
+		# else:
+		# 	phi, base_value = self.WLS(z_, weights, fz)  # dim (M*num_classes)
 		
 		print('Base value', base_value, 'for class ', true_pred.item())
 
@@ -401,6 +405,9 @@ class GraphSHAP():
 				(tensor): f(z) - probability of belonging to each target classes, for all samples z
 				Dimension (N * C) where N is num_samples and C num_classses. 
 		"""
+		# To networkx 
+		G = torch_geometric.utils.to_networkx(self.data)
+
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
 		if args_feat == 'Null':
@@ -467,28 +474,29 @@ class GraphSHAP():
 					X[node_index, val] = av_feat_values[val]  # 0
 
 				# Look at the 2-hop neighbours included
+				# Make sure that they are connected to v (with current nodes sampled nodes)
 				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
 				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+				
 				for incl_nei in included_nei: 
-					# Look at nodes connecting it to v 
-					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
-																node_idx=torch.tensor([incl_nei]),
-																num_hops=1,
-																edge_index=self.data.edge_index)
-					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
-					w = np.intersect1d(w, one_hop_neighbours)
+					l = nx.shortest_path(G, source=node_index, target=incl_nei)
+					for n in range(1,len(l)-1):
+						A = torch.cat((A, torch.tensor(
+							[[l[n-1]], [l[n]]] )), dim=-1)
+						X[l[n], :] = av_feat_values
 					
-					if set(w).intersection(ex_nei) == set(w):
-						#np.intersect1d(w, ex_nei)==w:
-						w = random.choice(w)
-						A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
-					X[w,:]= av_feat_values
-
-					#pos = (self.data.edge_index == incl_nei).nonzero()[:, 1].tolist()
-					#w = set(one_hop_neighbours.detach().numpy()).intersection(
-					#	self.data.edge_index[1, pos].detach().numpy())[0]							
+					# w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
+					# 											node_idx=torch.tensor([incl_nei]),
+					# 											num_hops=1,
+					# 											edge_index=self.data.edge_index)
+					# w = np.intersect1d(w, one_hop_neighbours)
+					# if set(w).intersection(ex_nei) == set(w):
+					# 	#np.intersect1d(w, ex_nei)==w:
+					# 	w = random.choice(w)
+					# 	A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
+					# X[w,:]= av_feat_values
 		
-			# Usual case
+			# Usual case - exclude features for the whole subgraph
 			else:
 				X[node_index, ex_feat] = av_feat_values[ex_feat]
 				for val in ex_feat:
@@ -519,6 +527,8 @@ class GraphSHAP():
 				(tensor): f(z) - probability of belonging to each target classes, for all samples z
 				Dimension (N * C) where N is num_samples and C num_classses.
 		"""
+		G = torch_geometric.utils.to_networkx(self.data)
+
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
 		if args_feat == 'Null':
@@ -585,20 +595,10 @@ class GraphSHAP():
 				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
 				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
 				for incl_nei in included_nei:
-					# Look at nodes connecting it to v
-					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
-																node_idx=torch.tensor([incl_nei]),
-																num_hops=1,
-																edge_index=self.data.edge_index)
-					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
-					w = np.intersect1d(w, one_hop_neighbours)
-
-					if set(w).intersection(ex_nei) == set(w):
-						#np.intersect1d(w, ex_nei)==w:
-						w = random.choice(w)
+					l = nx.shortest_path(G, source=node_index, target=incl_nei)
+					for n in range(1, len(l)-1):
 						A = torch.cat((A, torch.tensor(
-						    [[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
-					X[w, :] = av_feat_values
+							[[l[n-1]], [l[n]]])), dim=-1)
 
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
@@ -708,6 +708,8 @@ class GraphSHAP():
 				(tensor): f(z) - probability of belonging to each target classes, for all samples z
 				Dimension (N * C) where N is num_samples and C num_classses. 
 		"""
+		G = torch_geometric.utils.to_networkx(self.data)
+		
 		# We need to recover z from z' - wrt sampled neighbours and node features
 		# Initialise new node feature vectors and neighbours to disregard
 		if args_feat == 'Null':
@@ -763,32 +765,19 @@ class GraphSHAP():
 			# Change feature vector for node of interest
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
+			X[node_index, ex_feat] = av_feat_values[ex_feat]
 
 			# Special case - consider only nei. influence if too few feat included
 			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):	
-				X[node_index, ex_feat] = av_feat_values[ex_feat]
-
 				# Look at the 2-hop neighbours included
 				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
 				included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
-				for incl_nei in included_nei: 
-					# Look at nodes connecting it to v 
-					w, _, _, _ = torch_geometric.utils.k_hop_subgraph(
-																node_idx=torch.tensor([incl_nei]),
-																num_hops=1,
-																edge_index=self.data.edge_index)
-					#w = set(w.detach().numpy()).intersection(one_hop_neighbours.detach().numpy())
-					w = np.intersect1d(w, one_hop_neighbours)
-					
-					if set(w).intersection(ex_nei) == set(w):
-						#np.intersect1d(w, ex_nei)==w:
-						w = random.choice(w)
-						A = torch.cat((A, torch.tensor([[torch.tensor([w]), incl_nei], [incl_nei, torch.tensor([w])]])), dim=-1)
-					X[w,:]= av_feat_values		
-		
-			# Usual case - node index only
-			else:	
-				X[node_index, ex_feat] = av_feat_values[ex_feat]
+				for incl_nei in included_nei:
+					l = nx.shortest_path(G, source=node_index, target=incl_nei)
+					for n in range(1, len(l)-1):
+						A = torch.cat((A, torch.tensor(
+							[[l[n-1]], [l[n]]])), dim=-1)
+						X[l[n], :] = av_feat_values
 
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
@@ -942,7 +931,7 @@ class GraphSHAP():
 		phi = np.squeeze(phi, axis=1)
 		return phi.detach().numpy().astype('float64'), base_value
 	
-	def sklearn_WLR(self, z_, weights, fz):
+	def WLR_sklearn(self, z_, weights, fz, multiclass):
 		"""Train a weighted linear regression
 
 		Args:
@@ -966,7 +955,7 @@ class GraphSHAP():
 		base_value = reg.intercept_
 		return phi, base_value
 
-	def WLS(self, z_, weights, fz):
+	def WLS(self, z_, weights, fz, multiclass):
 		""" Ordinary Least Squares Method, weighted
 			Estimates shapely value coefficients
 

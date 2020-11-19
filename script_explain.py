@@ -49,19 +49,19 @@ def build_arguments():
 		node_index=0,
 		hops=2,
 		num_samples=100,
-		hv='compute_pred',
+		hv='node_specific',
 		feat='Null',
-		coal='Random',
-		g='Linear',
+		coal='Smarter',
+		g='WLS',
 		multiclass=False,
 	)
 
 	return parser.parse_args()
 
 # args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
-# args_feat: 'All', 'Expectation', 'Null'
+# args_feat: 'All', 'Expectation', 'Null', 'Random'
 # args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus'
-# args_g: 'WLR', WLS, WLR_sklearn
+# args_g: 'WLR', WLS, 'WLR_sklearn'
 
 def fix_seed(seed):
 	random.seed(seed)
