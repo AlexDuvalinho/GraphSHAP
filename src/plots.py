@@ -10,7 +10,7 @@ import torch
 import networkx as nx
 from torch_geometric.nn import MessagePassing
 from torch_geometric.data import Data
-from torch_geometric.utils import k_hop_subgraph, to_networkx
+from torch_geometric.utils import k_hop_subgraph, to_networkx, subgraph
 
 warnings.filterwarnings("ignore")
 
@@ -122,11 +122,17 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
     Args:
             - weighted_edge_mask:  Edge mask, with importance given to each edge
             - node_explanations :  Shapley values for neighbours
+            - neighbours
             - node_idx          :  Index of node to highlight (TODO ?)
             - feat              :  An array of node features.
             - label             :  A list of node labels.
             - theshold_num      :  The maximum number of nodes to threshold.
     """
+    # Subgraph with only relevant nodes - pytorch
+    s = subgraph(
+        torch.cat((torch.tensor([node_idx]), neighbours)), data.edge_index)[0]
+    
+
     # Disregard size of explanations
     node_explanations = np.abs(node_explanations)
 
@@ -147,12 +153,20 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
     threshold = np.sort(
         node_explanations)[-threshold_num]
 
+    # # Keep edges that satisfy the threshold
+    # weighted_edge_list = [
+    #     (data.edge_index[0, i].item(),
+    #      data.edge_index[1, i].item(), weighted_edge_mask[i].item())
+    #     for i, _ in enumerate(weighted_edge_mask)
+    #     if weighted_edge_mask[i] >= threshold
+    # ]
+
     # Keep edges that satisfy the threshold
-    weighted_edge_list = [
-        (data.edge_index[0, i].item(),
-         data.edge_index[1, i].item(), weighted_edge_mask[i].item())
-        for i, _ in enumerate(weighted_edge_mask)
-        if weighted_edge_mask[i] >= threshold
+    node_expl_dico = {}
+    for i, imp in enumerate(node_explanations):
+        node_expl_dico[neighbours[i].item()] = imp 
+    node_expl_dico[node_idx]=torch.tensor(0)
+    weighted_edge_list = [ (el1.item(),el2.item(),node_expl_dico[el1.item()].item()) for el1,el2 in zip(s[0],s[1])
     ]
     G.add_weighted_edges_from(weighted_edge_list)
 

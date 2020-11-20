@@ -40,6 +40,8 @@ def build_arguments():
                      help="method used to train g on derived dataset")
 	parser.add_argument("--multiclass", type=bool,
                      help='False if we consider explanations for the predicted class only')
+	parser.add_argument("--regu", type=int,
+                     help='None if we do not apply regularisation, 1 if only feat')
 
 	parser.set_defaults(
 		model='GCN',
@@ -48,12 +50,13 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_indexes=[0,10],
 		hops=2,
-		num_samples=1000,
+		num_samples=500,
 		hv='compute_pred',
 		feat='Expectation',
 		coal='SmarterPlus',
-		g='WLS',
-		multiclass=False,
+		g='WLR_sklearn',
+		multiclass=True,
+		regu=None
 	)
 
 	return parser.parse_args()
@@ -102,7 +105,8 @@ def main():
 									 args_feat=args.feat,
 									 args_coal=args.coal,
 									 args_g=args.g,
-									 multiclass=args.multiclass)
+									 multiclass=args.multiclass,
+									 regu=args.regu)
 
 	print('number samples: ' ,len(explanations))
 	print('dim expl:' , explanations[0].shape)
