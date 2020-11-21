@@ -21,7 +21,7 @@ import scipy.special
 import networkx as nx
 import torch
 import torch_geometric
-from sklearn.linear_model import LassoLarsCV, LassoCV, Lasso
+from sklearn.linear_model import LassoLarsCV, LassoLars, Lasso, Ridge
 from itertools import combinations
 
 # GraphLIME
@@ -46,16 +46,17 @@ class GraphSHAP():
 
 		self.model.eval()
 
-	def explain(self, node_indexes=[0], 
-						hops=2, 
-						num_samples=10,
-						info=True,
-						args_hv='compute_pred',
-						args_feat='Null', 
-						args_coal='Smarter', 
-						args_g = 'WLR',
-						multiclass=False,
-						regu=None):
+	def explain(self, 
+				node_indexes=[0], 
+				hops=2, 
+				num_samples=10,
+				info=True,
+				args_hv='compute_pred',
+				args_feat='Null', 
+				args_coal='Smarter', 
+				args_g = 'WLR',
+				multiclass=False,
+				regu=None):
 		""" Explain prediction for a particular node - GraphSHAP method
 
 		Args:
@@ -138,7 +139,7 @@ class GraphSHAP():
 			
 			# Def range of endcases considered 
 			args_K = 3
-			### Coalitions: sample z' - binary vector of dimension (num_samples, M)
+			### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
 			z_ = eval('self.' + args_coal)(num_samples, args_K)
 			
 			# Compute |z'| for each sample z': number of non-zero entries
@@ -149,26 +150,27 @@ class GraphSHAP():
 				true_conf, true_pred = self.model(
 					x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
 
-			### Define weights associated with each sample using Graphshap kernel formula
+			### GRAPHSHAP KERNEL: define weights associated with each sample 
 			weights = self.shapley_kernel(s)
 			# TODO: remove when tests are finished
-			if max(weights) > 9:
+			if max(weights) > 9 and info:
 				print('!! Empty or/and full coalition is included !!')
 				
-			### Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
+			### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
 			# Retrive z from z' and x_v, then compute f(z)
 			fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
 								feat_idx, one_hop_neighbours, args_K, args_feat)
 			
-			#### Multiclass / Predicted class only
+			#### MULTICLASS / Predicted class only
 			if not multiclass: 
 				fz = fz[:, true_pred]
 			
-			### Weighted Linear Regression to learn shapley values
-			phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass)			
-			print('Base value', base_value, 'for class ', true_pred.item())
+			### g: Weighted Linear Regression to learn shapley values
+			phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass, info)		
+			if info:	
+				print('Base value', base_value, 'for class ', true_pred.item())
 
-			### Regu
+			### REGU
 			if type(regu)==int and not multiclass: 
 				expl = np.array(true_conf - base_value)
 				phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
@@ -184,7 +186,8 @@ class GraphSHAP():
 			# Time
 			# TODO: remove after tests
 			end = time.time()
-			print('Time: ', end - start)
+			if info:
+				print('Time: ', end - start)
 
 			# Append explanations for this node to list of expl.
 			phi_list.append(phi)
@@ -397,7 +400,7 @@ class GraphSHAP():
 			a = s[i].item()
 			# Put an emphasis on samples where all or none features are included
 			if a == 0 or a == self.M:
-				shap_kernel.append(100)
+				shap_kernel.append(1000)
 			elif scipy.special.binom(self.M, a) == float('+inf'):
 				shap_kernel.append(1)
 			else:
@@ -430,8 +433,7 @@ class GraphSHAP():
 			av_feat_values = self.data.x.mean(dim=0)
 			# 'All' and 'Expectation'
 		
-		# or random feature vector made of random value across each col of X 
-
+		# Store nodes and features not sampled
 		excluded_feat = {}
 		excluded_nei = {}
 
@@ -479,9 +481,7 @@ class GraphSHAP():
 			A = torch.tensor(A)
 
 			# Change feature vector for node of interest
-			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
-
 			# Special case - consider only nei. influence if too few feat included
 			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
 				for val in ex_feat:
@@ -877,7 +877,7 @@ class GraphSHAP():
 	################################
 	# LEARN MODEL G
 	################################
-	def WLR(self, z_, weights, fz, multiclass):
+	def WLR(self, z_, weights, fz, multiclass, info):
 		"""Train a weighted linear regression
 
 		Args:
@@ -924,22 +924,24 @@ class GraphSHAP():
 				
 				# Store batch loss
 				av_loss.append(loss.item())
-			print('av loss epoch: ', np.mean(av_loss))
+			if info:
+				print('av loss epoch: ', np.mean(av_loss))
 
 		# Evaluate model
 		our_model.eval()
 		with torch.no_grad():
 			pred = our_model(z_)  
-		print('weighted r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
-		if multiclass: 
-			print(r2_score(pred, fz, multioutput='raw_values'))
-		print('r2 score: ', r2_score(pred, fz, weights))
+		if info:
+			print('weighted r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
+			if multiclass: 
+				print(r2_score(pred, fz, multioutput='raw_values'))
+			print('r2 score: ', r2_score(pred, fz, weights))
 
 		phi, base_value = [param.T for _,param in our_model.named_parameters()]
 		phi = np.squeeze(phi, axis=1)
 		return phi.detach().numpy().astype('float64'), base_value
 	
-	def WLR_sklearn(self, z_, weights, fz, multiclass):
+	def WLR_sklearn(self, z_, weights, fz, multiclass, info):
 		"""Train a weighted linear regression
 
 		Args:
@@ -956,15 +958,16 @@ class GraphSHAP():
 		reg.fit(z_, fz, weights)
 		y_pred = reg.predict(z_)
 		# Assess perf
-		print('weighted r2: ', reg.score(z_, fz, sample_weight=weights))
-		print('r2: ', r2_score(fz, y_pred))
+		if info:
+			print('weighted r2: ', reg.score(z_, fz, sample_weight=weights))
+			print('r2: ', r2_score(fz, y_pred))
 		# Coefficients
 		phi = reg.coef_
 		base_value = reg.intercept_
 	
 		return phi, base_value
 
-	def WLS(self, z_, weights, fz, multiclass):
+	def WLS(self, z_, weights, fz, multiclass, info):
 		""" Ordinary Least Squares Method, weighted
 			Estimates shapely value coefficients
 
@@ -984,7 +987,8 @@ class GraphSHAP():
 		try:
 			tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
 		except np.linalg.LinAlgError:  # matrix not invertible
-			print('WLS: Matrix not invertible')
+			if info: 
+				print('WLS: Matrix not invertible')
 			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
 			tmp = np.linalg.inv(tmp + np.diag(0.01 * np.random.randn(tmp.shape[1])))
 		phi = np.dot(tmp, np.dot(
@@ -992,8 +996,9 @@ class GraphSHAP():
 
 		# Test accuracy 
 		y_pred=z_.detach().numpy() @ phi
-		print('r2: ', r2_score(fz, y_pred))
-		print('weighted r2: ', r2_score(fz, y_pred, weights))
+		if info:
+			print('r2: ', r2_score(fz, y_pred))
+			print('weighted r2: ', r2_score(fz, y_pred, weights))
 
 		return phi[:-1], phi[-1]
 
@@ -1167,7 +1172,7 @@ class Greedy:
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=0, info=True):
+	def explain(self, node_index=0, hops=2, num_samples=0, info=True, *unused):
 		"""
 		Greedy explainer - only considers node features for explanations
 		Computes the prediction proba with and without the targeted feature (repeat for all feat)
@@ -1189,6 +1194,7 @@ class Greedy:
 		pred_confidence, label = torch.topk(probas, k=1)
 
 		# Init explanations vector
+		
 		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
 		#coef_pred_class = np.zeros(self.data.x.size(1))
 
@@ -1357,7 +1363,7 @@ class GraphLIME:
 
 		return G
 
-	def explain(self, node_index, hops, num_samples, info=False, **kwargs):
+	def explain(self, node_index, hops, num_samples, info=False, *unused, **kwargs):
 		# hops, num_samples, info are useless: just to copy graphshap pipeline
 		x = self.data.x
 		edge_index = self.data.edge_index
@@ -1398,7 +1404,7 @@ class LIME:
 
 		self.model.eval()
 
-	def __init_predict__(self, x, edge_index, **kwargs):
+	def __init_predict__(self, x, edge_index, *unused,**kwargs):
 		
 		# Get the initial prediction.
 		with torch.no_grad():
@@ -1456,7 +1462,7 @@ class SHAP():
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=10, info=True):
+	def explain(self, node_index=0, hops=2, num_samples=10, info=True, *unused):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
@@ -1605,7 +1611,7 @@ class GNNExplainer():
 
 		self.model.eval()
 
-	def explain(self, node_index, hops, num_samples, info=False):
+	def explain(self, node_index, hops, num_samples, info=False, *unused):
 		# Use GNNE open source implem - outputs features's and edges importance
 		explainer = GNNE(self.model, epochs=num_samples)
 		node_feat_mask, self.edge_mask = explainer.explain_node(

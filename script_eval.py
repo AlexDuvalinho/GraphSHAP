@@ -48,6 +48,18 @@ def build_arguments():
 						help='how connected are the noisy nodes we define: low, high or medium')
 	parser.add_argument("--multiclass", type=bool,
 						help='False if we consider explanations for the predicted class only')
+	parser.add_argument("--hv", type=str,
+                     help="way simplified input is translated to the original input space")
+	parser.add_argument("--feat", type=str,
+                     help="node features considered for hv above")
+	parser.add_argument("--coal", type=str,
+                     help="type of coalition sampler")
+	parser.add_argument("--g", type=str,
+                     help="method used to train g on derived dataset")
+	parser.add_argument("--regu", type=int,
+                     help='None if we do not apply regularisation, 1 if only feat')
+	parser.add_argument("--info", type=bool,
+                     help='True if we want to see info about the explainer')
 
 	parser.set_defaults(
 		model='GCN',
@@ -63,8 +75,19 @@ def build_arguments():
 		prop_noise_feat=0.20,
 		prop_noise_nodes=0.20,
 		connectedness='medium',
-		multiclass=False
+		multiclass=False,
+        hv='compute_pred',
+		feat='Expectation',
+		coal='Smarter',
+		g='WLR_sklearn',
+		regu=None,
+		info=False
 	)
+
+	# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
+	# args_feat: 'All', 'Expectation', 'Null', 'Random'
+	# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus'
+	# args_g: 'WLR', WLS, 'WLR_sklearn'
 
 	args = parser.parse_args()
 	return args
@@ -99,7 +122,13 @@ def main():
 							 args.prop_noise_nodes,
 							 args.connectedness,
 							 node_indices,
-							 info=True)
+							 args.info,
+							 args.hv,
+							 args.feat,
+							 args.coal,
+							 args.g,
+							 True,
+							 args.regu)
 
 		# Features
 		filter_useless_features(args.model,
@@ -111,7 +140,13 @@ def main():
 								args.K,
 								args.prop_noise_feat,
 								node_indices,
-								info=True)
+								args.info,
+								args.hv,
+								args.feat,
+								args.coal,
+								args.g,
+								True,
+								args.regu)
 
 	else:
 		# Neighbours
@@ -126,7 +161,7 @@ def main():
 										node_indices,
 										5,
 										args.multiclass,
-										info=True)
+										args.info)
 
 		# Node features
 		filter_useless_features_multiclass(args.model,
@@ -139,7 +174,7 @@ def main():
 										   node_indices,
 										   5,
 										   args.multiclass,
-										   info=True)
+										   args.info)
 
 	end_time = time.time()
 	print('Time: ', end_time - start_time)

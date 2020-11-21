@@ -50,12 +50,12 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_indexes=[0,10],
 		hops=2,
-		num_samples=500,
+		num_samples=1000,
 		hv='compute_pred',
 		feat='Expectation',
-		coal='SmarterPlus',
+		coal='Smarter',
 		g='WLR_sklearn',
-		multiclass=True,
+		multiclass=False,
 		regu=None
 	)
 
@@ -97,16 +97,16 @@ def main():
 
 	# Explain it with GraphSHAP
 	explainer = eval(args.explainer)(data, model)
-	explanations = explainer.explain(node_indexes=args.node_indexes,
-									 hops=args.hops,
-									 num_samples=args.num_samples,
-									 info=True,
-									 args_hv=args.hv,
-									 args_feat=args.feat,
-									 args_coal=args.coal,
-									 args_g=args.g,
-									 multiclass=args.multiclass,
-									 regu=args.regu)
+	explanations = explainer.explain(args.node_indexes,
+									 args.hops,
+									 args.num_samples,
+									 True,
+									 args.hv,
+									 args.feat,
+									 args.coal,
+									 args.g,
+									 args.multiclass,
+									 args.regu)
 
 	print('number samples: ' ,len(explanations))
 	print('dim expl:' , explanations[0].shape)

@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 from torch_geometric.nn import GNNExplainer as GNNE
 
 from src.data import (add_noise_features, add_noise_neighbours,
-                      extract_test_nodes, prepare_data)
+					  extract_test_nodes, prepare_data)
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
-                            Greedy, Random)
+							Greedy, Random)
 from src.models import GAT, GCN
 from src.plots import plot_dist
 from src.train import accuracy, train_and_val
@@ -38,7 +38,13 @@ def filter_useless_features(args_model,
 							args_K,
 							args_prop_noise_feat,
 							node_indices,
-							info=True):
+							info,
+							args_hv,
+							args_feat,
+							args_coal,
+							args_g,
+							args_multiclass,
+							args_regu):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -114,10 +120,26 @@ def filter_useless_features(args_model,
 		for node_idx in tqdm(node_indices, desc='explain node', leave=False):
 			
 			# Explanations via GraphSHAP
-			coefs = explainer.explain(node_index=node_idx,
-									  hops=args_hops,
-									  num_samples=args_num_samples,
-                             info=False)[:explainer.F, predicted_classes[j]]
+			if explainer_name == 'GraphSHAP':
+				coefs = explainer.explain(
+								[node_idx],
+								args_hops,
+								args_num_samples,
+								info,
+								args_hv,
+								args_feat,
+								args_coal,
+								args_g,
+								False,
+								args_regu
+								)
+				coefs = coefs[0][:explainer.F]
+			else:
+				coefs = explainer.explain(node_idx,
+										args_hops,
+										args_num_samples,
+										info=False
+										)[:explainer.F, predicted_classes[j]]
 
 			# Number of non-zero noisy features is different
 			# for explainers with all features considered vs non-zero features only (shap,graphshap)
@@ -148,9 +170,9 @@ def filter_useless_features(args_model,
 
 		if info:
 			print('Noisy features included in explanations: ',
-                            sum(pred_class_num_noise_feats) )
+							sum(pred_class_num_noise_feats) )
 			print('For the predicted class, there are {} noise features found in the explanations of {} test samples, an average of {} per sample'
-                            .format(sum(pred_class_num_noise_feats), args_test_samples, sum(pred_class_num_noise_feats)/args_test_samples))
+							.format(sum(pred_class_num_noise_feats), args_test_samples, sum(pred_class_num_noise_feats)/args_test_samples))
 
 			print(pred_class_num_noise_feats)
 
@@ -221,8 +243,6 @@ def noise_feats_for_random(data, model, K, total_num_noise_feat_considered, node
 
 
 ###############################################################################
-
-
 def filter_useless_nodes(args_model,
 						 args_dataset,
 						 args_explainers,
@@ -232,9 +252,14 @@ def filter_useless_nodes(args_model,
 						 args_K,
 						 args_prop_noise_nodes,
 						 args_connectedness,
-						 node_indices=None,
-						 multiclass=True,
-						 info=True):
+						 node_indices,
+						 info,
+						 args_hv,
+						 args_feat,
+						 args_coal,
+						 args_g,
+						 args_multiclass,
+						 args_regu):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -315,25 +340,31 @@ def filter_useless_nodes(args_model,
 
 			# Look only at coefficients for nodes (not node features)
 			if explainer_name == 'Greedy':
-				coefs = explainer.explain_nei(node_index=node_idx,
-											  hops=args_hops,
-											  num_samples=args_num_samples,
+				coefs = explainer.explain_nei(node_idx,
+											  args_hops,
+											  args_num_samples,
 											  info=False)
 
 			elif explainer_name == 'GNNExplainer':
-				_ = explainer.explain(node_index=node_idx,
-									  hops=args_hops,
-									  num_samples=args_num_samples,
+				_ = explainer.explain(node_idx,
+									  args_hops,
+									  args_num_samples,
 									  info=False)
 				coefs = explainer.coefs
 
 			else:
 				# Explanations via GraphSHAP
-				coefs = explainer.explain(node_index=node_idx,
-										  hops=args_hops,
-										  num_samples=args_num_samples,
-										  info=False)
-				coefs = coefs[explainer.F:]		
+				coefs = explainer.explain([node_idx],
+										  args_hops,
+										  args_num_samples,
+										  False,
+										  args_hv,
+										  args_feat,
+										  args_coal,
+										  args_g,
+										  True,
+										  args_regu)
+				coefs = coefs[0].T[explainer.F:]
 
 			# Number of noisy nodes in the subgraph of node_idx
 			num_noisy_nodes = len(
@@ -361,10 +392,10 @@ def filter_useless_nodes(args_model,
 
 		if info:
 			print('Noisy neighbours included in explanations: ',
-                            pred_class_num_noise_neis)
+							pred_class_num_noise_neis)
 
 			print('There are {} noise neighbours found in the explanations of {} test samples, an average of {} per sample'
-                            .format(sum(pred_class_num_noise_neis), args_test_samples, sum(pred_class_num_noise_neis)/args_test_samples))
+							.format(sum(pred_class_num_noise_neis), args_test_samples, sum(pred_class_num_noise_neis)/args_test_samples))
 
 			print('Proportion of explanations showing noisy neighbours: {:.2f}%'.format(
 				100 * sum(pred_class_num_noise_neis) / sum(K)))
@@ -392,7 +423,7 @@ def filter_useless_nodes(args_model,
 	total_num_noise_neis = noise_nodes_for_random(
 		data, model, K, node_indices, total_num_noisy_nei, total_neigbours)
 	plot_dist(total_num_noise_neis, label='Random',
-	          color='y')
+			  color='y')
 
 	plt.savefig('results/eval1_node_{}'.format(data.name))
 	plt.close()
@@ -425,7 +456,7 @@ def noise_nodes_for_random(data, model, K, node_indices, total_num_noisy_nei, to
 
 		# Number of noisy features that appear in explanations - use index to spot them
 		num_noise_nei = sum(
-                    idx >= (total_neigbours[j]-total_num_noisy_nei[j]) for idx in nei_indices)
+					idx >= (total_neigbours[j]-total_num_noisy_nei[j]) for idx in nei_indices)
 
 		pred_class_num_noise_neis.append(num_noise_nei)
 
@@ -440,7 +471,7 @@ def study_attention_weights(data, model, args_test_samples):
 
 	# remove self loops att
 	edges, alpha1 = alpha[0][:, :-
-                          (data.x.size(0))], alpha[1][:-(data.x.size(0)), :]
+						  (data.x.size(0))], alpha[1][:-(data.x.size(0)), :]
 	alpha2 = alpha_bis[1][:-(data.x.size(0))]
 
 	# Look at all importance coefficients of noisy nodes towards normal nodes
@@ -460,9 +491,9 @@ def study_attention_weights(data, model, args_test_samples):
 	# In fact, noisy nodes are slightly below average in terms of attention received
 	# Importance of interest: look only at imp. of noisy nei for test nodes
 	print('attention 1 av. for noisy nodes: ',
-            torch.mean(torch.stack(att1[0::2])))
+			torch.mean(torch.stack(att1[0::2])))
 	print('attention 2 av. for noisy nodes: ',
-            torch.mean(torch.stack(att2[0::2])))
+			torch.mean(torch.stack(att2[0::2])))
 
 	return torch.mean(alpha[1], axis=1)
 
@@ -476,7 +507,14 @@ def eval_shap(args_dataset,
 			  args_hops,
 			  args_K,
 			  args_num_samples,
-			  node_indices=None):
+			  node_indices,
+              info,
+              args_hv,
+              args_feat,
+              args_coal,
+              args_g,
+              args_multiclass,
+              args_regu):
 	"""
 	Compares SHAP and GraphSHAP on graph based datasets
 	Check if they agree on features'contribution towards prediction for several test samples
@@ -520,6 +558,18 @@ def eval_shap(args_dataset,
 											hops=args_hops,
 											num_samples=args_num_samples,
 											info=False)
+		coefs = graphshap.explain(
+							[node_idx],
+							args_hops,
+							args_num_samples,
+							info,
+							args_hv,
+							args_feat,
+							args_coal,
+							args_g,
+							False,
+							args_regu
+							)
 
 		shap_coefs = shap.explain(node_index=node_idx,
 								  hops=args_hops,
@@ -529,7 +579,7 @@ def eval_shap(args_dataset,
 		# Consider node features only - for predicted class only
 		true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[
 			node_idx].max(dim=0)
-		graphshap_coefs = graphshap_coefs[:graphshap.F, predicted_class]
+		graphshap_coefs = graphshap_coefs[0][:graphshap.F]
 		shap_coefs = shap_coefs[:, predicted_class]
 
 		# Need to apply regularisation
