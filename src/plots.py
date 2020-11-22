@@ -132,7 +132,6 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
     s = subgraph(
         torch.cat((torch.tensor([node_idx]), neighbours)), data.edge_index)[0]
     
-
     # Disregard size of explanations
     node_explanations = np.abs(node_explanations)
 
@@ -168,6 +167,8 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
     node_expl_dico[node_idx]=torch.tensor(0)
     weighted_edge_list = [ (el1.item(),el2.item(),node_expl_dico[el1.item()].item()) for el1,el2 in zip(s[0],s[1])
     ]
+    # Remove edges from node of interest to neighbours
+    weighted_edge_list = [item for item in weighted_edge_list if item[0] != 0]
     G.add_weighted_edges_from(weighted_edge_list)
 
     # Keep nodes that satisfy the threshold

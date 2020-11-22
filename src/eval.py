@@ -96,9 +96,12 @@ def filter_useless_features(args_model,
 
 	# Adaptable K - top k explanations we look at for each node
 	# Depends on number of existing features/neighbours considered for GraphSHAP
-	K = []
-	for node_idx in node_indices:
-		K.append(int(data.x[node_idx].nonzero().shape[0] * args_K))
+	if 'GraphSHAP' in args_explainers:
+		K = []
+	else:
+		K = [10]*len(node_indices)
+	#for node_idx in node_indices:
+	#	K.append(int(data.x[node_idx].nonzero().shape[0] * args_K))
 
 	# Loop on the different explainers selected
 	for c, explainer_name in enumerate(args_explainers):
@@ -111,7 +114,7 @@ def filter_useless_features(args_model,
 		pred_class_num_noise_feats = []
 		# count number of noisy features considered
 		total_num_noise_feat_considered = []
-		# count number of (non zero) features   
+		# count number of features   
 		F = []
 
 		# Loop on each test sample and store how many times do noise features appear among
@@ -126,28 +129,36 @@ def filter_useless_features(args_model,
 								args_hops,
 								args_num_samples,
 								info,
+								args_multiclass,
 								args_hv,
 								args_feat,
 								args_coal,
 								args_g,
-								False,
 								args_regu
 								)
 				coefs = coefs[0][:explainer.F]
+				# Adaptable K
+				if explainer.F > 50:
+					K.append(10)
+				else:
+					K.append(int(explainer.F * args_K))
+			
 			else:
 				coefs = explainer.explain(node_idx,
 										args_hops,
 										args_num_samples,
-										info=False
-										)[:explainer.F, predicted_classes[j]]
+										info=False,
+										multiclass=False
+										)[:explainer.F]
 
 			# Number of non-zero noisy features is different
 			# for explainers with all features considered vs non-zero features only (shap,graphshap)
-			if explainer.F != data.x.size(1):
-				num_noise_feat_considered = len(
-					[val for val in noise_feat[node_idx] if val != 0])
-			else:
-				num_noise_feat_considered = args_num_noise_feat
+			#if explainer.F != data.x.size(1):
+			#	num_noise_feat_considered = len(
+			#		[val for val in noise_feat[node_idx] if val != 0])
+			#else:
+			#	num_noise_feat_considered = args_num_noise_feat
+			num_noise_feat_considered = args_num_noise_feat
 
 			# Features considered 
 			F.append(explainer.F)
@@ -342,14 +353,12 @@ def filter_useless_nodes(args_model,
 			if explainer_name == 'Greedy':
 				coefs = explainer.explain_nei(node_idx,
 											  args_hops,
-											  args_num_samples,
-											  info=False)
+											  args_num_samples)
 
 			elif explainer_name == 'GNNExplainer':
 				_ = explainer.explain(node_idx,
 									  args_hops,
-									  args_num_samples,
-									  info=False)
+									  args_num_samples)
 				coefs = explainer.coefs
 
 			else:
@@ -357,12 +366,12 @@ def filter_useless_nodes(args_model,
 				coefs = explainer.explain([node_idx],
 										  args_hops,
 										  args_num_samples,
-										  False,
+										  info,
+										  args_multiclass,
 										  args_hv,
 										  args_feat,
 										  args_coal,
 										  args_g,
-										  True,
 										  args_regu)
 				coefs = coefs[0].T[explainer.F:]
 
@@ -377,7 +386,8 @@ def filter_useless_nodes(args_model,
 			K.append(int(args_K * len(explainer.neighbours)))
 
 			# Store indexes of K most important features, for each class
-			nei_indices = np.abs(coefs[:, predicted_classes[j]]).argsort()[-K[j]:].tolist()
+			nei_indices = np.abs(coefs).argsort()[-K[j]:].tolist()
+			# nei_indices = np.abs(coefs[:, predicted_classes[j]]).argsort()[-K[j]:].tolist()
 
 			# Number of noisy features that appear in explanations - use index to spot them
 			num_noise_nei = sum(

@@ -69,19 +69,19 @@ def build_arguments():
 					'SHAP', 'LIME'],
 		node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
 		hops=2,
-		num_samples=200,
+		num_samples=1500,
 		test_samples=10,
-		K=0.25,
+		K=0.20,
 		prop_noise_feat=0.20,
 		prop_noise_nodes=0.20,
 		connectedness='medium',
 		multiclass=False,
         hv='compute_pred',
-		feat='Expectation',
+		feat='All',
 		coal='Smarter',
 		g='WLR_sklearn',
 		regu=None,
-		info=False
+		info=True
 	)
 
 	# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
@@ -112,6 +112,7 @@ def main():
 	if args.multiclass == False:
 
 		# Neighbours
+		"""
 		filter_useless_nodes(args.model,
 							 args.dataset,
 							 args.node_explainers,
@@ -127,9 +128,9 @@ def main():
 							 args.feat,
 							 args.coal,
 							 args.g,
-							 True,
+							 args.multiclass,
 							 args.regu)
-
+		"""
 		# Features
 		filter_useless_features(args.model,
 								args.dataset,
@@ -145,7 +146,7 @@ def main():
 								args.feat,
 								args.coal,
 								args.g,
-								True,
+								args.multiclass,
 								args.regu)
 
 	else:

@@ -51,11 +51,11 @@ class GraphSHAP():
 				hops=2, 
 				num_samples=10,
 				info=True,
+             	multiclass=False,
 				args_hv='compute_pred',
 				args_feat='Null', 
 				args_coal='Smarter', 
 				args_g = 'WLR',
-				multiclass=False,
 				regu=None):
 		""" Explain prediction for a particular node - GraphSHAP method
 
@@ -316,9 +316,10 @@ class GraphSHAP():
 
 				# Sample random coalitions 
 				z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
-		
+				return z_
 		return z_
-	
+
+
 	def Smart(self, num_samples, args_K):
 		""" Sample coalitions cleverly given shapley kernel def
 
@@ -1167,12 +1168,13 @@ class Greedy:
 		self.model = model
 		self.data = data
 		self.neighbours = None
-		self.M = None
-		self.F = None
+		self.M = self.data.x.size(1)
+		self.F = self.M
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=0, info=True, *unused):
+
+	def explain(self, node_index=0, hops=2, num_samples=0, info=False, multiclass=False, *unused):
 		"""
 		Greedy explainer - only considers node features for explanations
 		Computes the prediction proba with and without the targeted feature (repeat for all feat)
@@ -1181,39 +1183,49 @@ class Greedy:
 		"""
 		# Create a variable to store node features
 		x = self.data.x[node_index, :]
-		# Number of non-zero entries for the feature vector x_v
-		self.M = x[x != 0].shape[0]
-		self.F = self.M
+
 		# Store indexes of these non zero feature values
-		feat_idx = x.nonzero()
+		feat_idx = torch.arange(self.F)
 
 		# Compute predictions
 		with torch.no_grad():
 			probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
 				node_index]
-		pred_confidence, label = torch.topk(probas, k=1)
+		probas, label = torch.topk(probas, k=1)
 
 		# Init explanations vector
 		
-		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
-		#coef_pred_class = np.zeros(self.data.x.size(1))
+		if multiclass: 
+			coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
+			
+			# Loop on all features - consider all classes
+			for i, idx in enumerate(feat_idx):
+				idx = idx.item()
+				x_ = deepcopy(self.data.x)
+				x_[:, idx] = 0.0  # set feat of interest to 0
+				with torch.no_grad():
+					probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
+						node_index]  # [label].item()
+				# Compute explanations with the following formula
+				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
+		else: 
+			probas = probas[label.item()]
+			coefs = np.zeros([self.M])  # (m, #feats)
+			# Loop on all features - consider all classes
+			for i, idx in enumerate(feat_idx):
+				idx = idx.item()
+				x_ = deepcopy(self.data.x)
+				x_[:, idx] = 0.0  # set feat of interest to 0
+				with torch.no_grad():
+					probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
+						node_index, label.item()]  # [label].item()
+				# Compute explanations with the following formula
+				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
-		# Loop on all features - consider all classes
-		for i, idx in enumerate(feat_idx):
-			idx = idx.item()
-			x_ = deepcopy(self.data.x)
-			x_[:, idx] = 0.0  # set feat of interest to 0
-			with torch.no_grad():
-				probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
-					node_index]  # [label].item()
-			# Compute explanations with the following formula
-			coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
-			#coef_pred_class[i] = (torch.abs(
-			#	pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
+		return coefs 
 
-		return coefs  # , coef_pred_class
-
-	def explain_nei(self, node_index=0, hops=2, num_samples=0, info=True):
+	def explain_nei(self, node_index=0, hops=2, num_samples=0, info=False, multiclass=False):
+		
 		# Create a variable to store node features
 		x = self.data.x[node_index, :]
 
@@ -1235,32 +1247,53 @@ class Greedy:
 				node_index]
 		pred_confidence, label = torch.topk(probas, k=1)
 
-		# Init explanations vector
-		coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
-		#coef_pred_class = np.zeros(self.data.x.size(1))
+		if multiclass:
+			# Init explanations vector
+			coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
 
-		# Loop on all neighbours - consider all classes
-		for i, nei_idx in enumerate(self.neighbours):
-			nei_idx = nei_idx.item()
-			A_ = deepcopy(self.data.edge_index)
+			# Loop on all neighbours - consider all classes
+			for i, nei_idx in enumerate(self.neighbours):
+				nei_idx = nei_idx.item()
+				A_ = deepcopy(self.data.edge_index)
 
-			# Find all edges incident to the isolated neighbour
-			pos = (self.data.edge_index == nei_idx).nonzero()[:, 1].tolist()
+				# Find all edges incident to the isolated neighbour
+				pos = (self.data.edge_index == nei_idx).nonzero()[:, 1].tolist()
 
-			# Create new adjacency matrix where this neighbour is isolated
-			A_ = np.array(self.data.edge_index)
-			A_ = np.delete(A_, pos, axis=1)
-			A_ = torch.tensor(A_)
+				# Create new adjacency matrix where this neighbour is isolated
+				A_ = np.array(self.data.edge_index)
+				A_ = np.delete(A_, pos, axis=1)
+				A_ = torch.tensor(A_)
 
-			# Compute new prediction with updated adj matrix (without this neighbour)
-			with torch.no_grad():
-				probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
-					node_index]  # [label].item()
+				# Compute new prediction with updated adj matrix (without this neighbour)
+				with torch.no_grad():
+					probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
+						node_index]  # [label].item()
+				
+				# Compute explanations with the following formula
+				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
-			# Compute explanations with the following formula
-			coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
-			#coef_pred_class[i] = (torch.abs(
-			#	pred_confidence - probas_[label].item()) / pred_confidence).detach().numpy()
+		else: 
+			probas = probas[label.item()]
+			coefs = np.zeros(self.M)
+			for i, nei_idx in enumerate(self.neighbours):
+				nei_idx = nei_idx.item()
+				A_ = deepcopy(self.data.edge_index)
+
+				# Find all edges incident to the isolated neighbour
+				pos = (self.data.edge_index == nei_idx).nonzero()[:, 1].tolist()
+
+				# Create new adjacency matrix where this neighbour is isolated
+				A_ = np.array(self.data.edge_index)
+				A_ = np.delete(A_, pos, axis=1)
+				A_ = torch.tensor(A_)
+
+				# Compute new prediction with updated adj matrix (without this neighbour)
+				with torch.no_grad():
+					probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
+						node_index, label.item() ]  # [label].item()
+
+				# Compute explanations with the following formula
+				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
 		return coefs
 
@@ -1269,7 +1302,7 @@ class Random:
 
 	def __init__(self, num_feats, K):
 		self.num_feats = num_feats
-		self.K = K
+		self.K = K 
 
 	def explain(self):
 		return np.random.choice(self.num_feats, self.K)
@@ -1363,7 +1396,7 @@ class GraphLIME:
 
 		return G
 
-	def explain(self, node_index, hops, num_samples, info=False, *unused, **kwargs):
+	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused, **kwargs):
 		# hops, num_samples, info are useless: just to copy graphshap pipeline
 		x = self.data.x
 		edge_index = self.data.edge_index
@@ -1378,20 +1411,37 @@ class GraphLIME:
 
 		n, d = x.shape
 
-		K = self.__compute_kernel__(x, reduce=False)  # (n, n, d)
-		L = self.__compute_kernel__(y, reduce=False)  # (n, n, 1)
+		if multiclass:
+			K = self.__compute_kernel__(x, reduce=False)  # (n, n, d)
+			L = self.__compute_kernel__(y, reduce=False)  # (n, n, 1)
 
-		K_bar = self.__compute_gram_matrix__(K)  # (n, n, d)
-		L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
+			K_bar = self.__compute_gram_matrix__(K)  # (n, n, d)
+			L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
 
-		K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
-		L_bar = L_bar.reshape(n ** 2, self.data.num_classes)  # (n ** 2,) 
+			K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
+			L_bar = L_bar.reshape(n ** 2, self.data.num_classes)  # (n ** 2,) 
 
-		solver = LassoLars(self.rho, fit_intercept=False,
-						   normalize=False, positive=True)
-		solver.fit(K_bar * n, L_bar * n)
+			solver = LassoLars(self.rho, fit_intercept=False,
+							normalize=False, positive=True)
+			solver.fit(K_bar * n, L_bar * n)
 
-		return solver.coef_.T
+			return solver.coef_.T
+
+		else: 
+			K = self.__compute_kernel__(x, reduce=False)  # (n, n, d)
+			L = self.__compute_kernel__(y, reduce=True)  # (n, n, 1)
+
+			K_bar = self.__compute_gram_matrix__(K)  # (n, n, d)
+			L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
+
+			K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
+			L_bar = L_bar.reshape(n ** 2,)  # (n ** 2,) 
+
+			solver = LassoLars(self.rho, fit_intercept=False,
+				normalize=False, positive=True)
+			solver.fit(K_bar * n, L_bar * n)
+
+			return solver.coef_
 
 
 class LIME:
@@ -1413,7 +1463,7 @@ class LIME:
 
 		return probas
 
-	def explain(self, node_index, hops, num_samples, info=False, **kwargs):
+	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, **kwargs):
 		x = self.data.x
 		edge_index = self.data.edge_index
 
@@ -1423,24 +1473,45 @@ class LIME:
 		x_ = deepcopy(x)
 		original_feats = x[node_index, :]
 
-		sample_x = [original_feats.detach().numpy()]
-		#sample_y = [proba.item()]
-		sample_y = [probas[node_index, :].detach().numpy()]
+		if multiclass: 
+			sample_x = [original_feats.detach().numpy()]
+			#sample_y = [proba.item()]
+			sample_y = [probas[node_index, :].detach().numpy()]
 
-		for _ in range(num_samples):
-			x_[node_index, :] = original_feats + \
-				torch.randn_like(original_feats)
+			for _ in range(num_samples):
+				x_[node_index, :] = original_feats + \
+					torch.randn_like(original_feats)
 
-			with torch.no_grad():
-				log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
-				probas_ = log_logits.exp()
+				with torch.no_grad():
+					log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+					probas_ = log_logits.exp()
 
-			#proba_ = probas_[node_index, label]
-			proba_ = probas_[node_index]
+				#proba_ = probas_[node_index, label]
+				proba_ = probas_[node_index]
 
-			sample_x.append(x_[node_index, :].detach().numpy())
-			# sample_y.append(proba_.item())
-			sample_y.append(proba_.detach().numpy())
+				sample_x.append(x_[node_index, :].detach().numpy())
+				# sample_y.append(proba_.item())
+				sample_y.append(proba_.detach().numpy())
+
+		else: 
+			sample_x = [original_feats.detach().numpy()]
+			sample_y = [proba.item()]
+			# sample_y = [probas[node_index, :].detach().numpy()]
+
+			for _ in range(num_samples):
+				x_[node_index, :] = original_feats + \
+					torch.randn_like(original_feats)
+
+				with torch.no_grad():
+					log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+					probas_ = log_logits.exp()
+
+				proba_ = probas_[node_index, label]
+				# proba_ = probas_[node_index]
+
+				sample_x.append(x_[node_index, :].detach().numpy())
+				sample_y.append(proba_.item())
+				# sample_y.append(proba_.detach().numpy())
 
 		sample_x = np.array(sample_x)
 		sample_y = np.array(sample_y)
@@ -1456,33 +1527,26 @@ class SHAP():
 	def __init__(self, data, model):
 		self.model = model
 		self.data = data
-		self.M = None  # number of nonzero features - for each node index
+		self.M = data.x.size(1)  # number of nonzero features - for each node index
 		self.neighbours = None
-		self.F = None
+		self.F = self.M
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=10, info=True, *unused):
+	def explain(self, node_index=0, hops=2, num_samples=10, info=True, multiclass= False, *unused):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
 		:param num_samples: number of samples we want to form GraphSHAP's new dataset 
 		:return: shapley values for features that influence node v's pred
 		"""
-
 		# Determine z' => features and neighbours whose importance is investigated
 
 		# Create a variable to store node features
 		x = self.data.x[node_index, :]
 
-		# Number of non-zero entries for the feature vector x_v
-		F = x[x != 0].shape[0]
-		self.F = F
-		# Store indexes of these non zero feature values
-		feat_idx = torch.nonzero(x)
-
-		# Total number of features + neighbours considered for node v
-		self.M = F
+		# Consider all features (+ use expectation like below)
+		feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
 
 		# Sample z' - binary vector of dimension (num_samples, M)
 		# F node features first, then D neighbours
@@ -1495,7 +1559,16 @@ class SHAP():
 
 		# Create dataset (z', f(z)), stored as (z_, fz)
 		# Retrive z from z' and x_v, then compute f(z)
-		fz = self.compute_pred(node_index, num_samples, F, z_, feat_idx)
+		fz = self.compute_pred(node_index, num_samples, self.F, z_, feat_idx)
+
+		# Compute true prediction of model, for original instance
+		with torch.no_grad():
+			true_conf, true_pred = self.model(
+				x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+
+		# Multiclass 
+		if not multiclass: 
+			fz = fz[:, true_pred]
 
 		# OLS estimator for weighted linear regression
 		phi = self.OLS(z_, weights, fz)  # dim (M*num_classes)
@@ -1590,7 +1663,7 @@ class SHAP():
 			tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
 		except np.linalg.LinAlgError:  # matrix not invertible
 			tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
-			tmp = np.linalg.inv(tmp + np.diag(np.random.randn(tmp.shape[1])))
+			tmp = np.linalg.inv(tmp + np.diag(0.1*np.random.randn(tmp.shape[1])))
 		phi = np.dot(tmp, np.dot(
 			np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 
@@ -1611,12 +1684,12 @@ class GNNExplainer():
 
 		self.model.eval()
 
-	def explain(self, node_index, hops, num_samples, info=False, *unused):
+	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused):
 		# Use GNNE open source implem - outputs features's and edges importance
 		explainer = GNNE(self.model, epochs=num_samples)
 		node_feat_mask, self.edge_mask = explainer.explain_node(
 			node_index, self.data.x, self.data.edge_index)
-
+			
 		# Transfer edge importance to node importance
 		dico = {}
 		for idx in torch.nonzero(self.edge_mask):
@@ -1627,22 +1700,40 @@ class GNNExplainer():
 				dico[node].append(self.edge_mask[idx])
 		# Count neighbours in the subgraph
 		self.neighbours = torch.tensor([index for index in dico.keys()])
-		# Attribute an importance measure to each node = sum of incident edges' importance
-		self.coefs = torch.zeros(
-			self.neighbours.shape[0], self.data.num_classes)
-		# for key, val in dico.items():
-		for i, val in enumerate(dico.values()):
-			#self.coefs[key,:] = sum(val)
-			self.coefs[i, :] = sum(val)
+			
+		if multiclass:	
+			# Attribute an importance measure to each node = sum of incident edges' importance
+			self.coefs = torch.zeros(
+				self.neighbours.shape[0], self.data.num_classes)
+			# for key, val in dico.items():
+			for i, val in enumerate(dico.values()):
+				#self.coefs[key,:] = sum(val)
+				self.coefs[i, :] = sum(val)
 
-		# Eliminate node_index from neighbourhood
-		self.neighbours = self.neighbours[self.neighbours != node_index]
-		self.coefs = self.coefs[1:]
+			# Eliminate node_index from neighbourhood
+			self.neighbours = self.neighbours[self.neighbours != node_index]
+			self.coefs = self.coefs[1:]
 
-		if info == True:
-			self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
+			if info == True:
+				self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
 
-		return torch.stack([node_feat_mask]*self.data.num_classes, 1)
+			return torch.stack([node_feat_mask]*self.data.num_classes, 1)
+		
+		else: 
+			# Attribute an importance measure to each node = sum of incident edges' importance
+			self.coefs = torch.zeros(
+				self.neighbours.shape[0])
+			for i, val in enumerate(dico.values()):
+				self.coefs[i] = sum(val)
+
+			# Eliminate node_index from neighbourhood
+			self.neighbours = self.neighbours[self.neighbours != node_index]
+			self.coefs = self.coefs[1:]
+
+			if info == True:
+				self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
+
+			return node_feat_mask
 
 	def vizu(self, edge_mask, node_index, phi, hops):
 		"""

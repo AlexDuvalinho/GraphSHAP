@@ -42,6 +42,8 @@ def build_arguments():
                      help='False if we consider explanations for the predicted class only')
 	parser.add_argument("--regu", type=int,
                      help='None if we do not apply regularisation, 1 if only feat')
+	parser.add_argument("--info", type=bool,
+                     help='True if want to print info')
 
 	parser.set_defaults(
 		model='GCN',
@@ -56,7 +58,8 @@ def build_arguments():
 		coal='Smarter',
 		g='WLR_sklearn',
 		multiclass=False,
-		regu=None
+		regu=None,
+		info=True
 	)
 
 	return parser.parse_args()
@@ -100,12 +103,12 @@ def main():
 	explanations = explainer.explain(args.node_indexes,
 									 args.hops,
 									 args.num_samples,
-									 True,
+									 args.info,
+									 args.multiclass,
 									 args.hv,
 									 args.feat,
 									 args.coal,
 									 args.g,
-									 args.multiclass,
 									 args.regu)
 
 	print('number samples: ' ,len(explanations))
