@@ -49,17 +49,17 @@ def build_arguments():
 	parser.add_argument("--multiclass", type=bool,
 						help='False if we consider explanations for the predicted class only')
 	parser.add_argument("--hv", type=str,
-                     help="way simplified input is translated to the original input space")
+					 help="way simplified input is translated to the original input space")
 	parser.add_argument("--feat", type=str,
-                     help="node features considered for hv above")
+					 help="node features considered for hv above")
 	parser.add_argument("--coal", type=str,
-                     help="type of coalition sampler")
+					 help="type of coalition sampler")
 	parser.add_argument("--g", type=str,
-                     help="method used to train g on derived dataset")
+					 help="method used to train g on derived dataset")
 	parser.add_argument("--regu", type=int,
-                     help='None if we do not apply regularisation, 1 if only feat')
+					 help='None if we do not apply regularisation, 1 if only feat')
 	parser.add_argument("--info", type=bool,
-                     help='True if we want to see info about the explainer')
+					 help='True if we want to see info about the explainer')
 
 	parser.set_defaults(
 		model='GCN',
@@ -69,17 +69,17 @@ def build_arguments():
 					'SHAP', 'LIME'],
 		node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
 		hops=2,
-		num_samples=1500,
-		test_samples=10,
+		num_samples=1000,
+		test_samples=5,
 		K=0.20,
 		prop_noise_feat=0.20,
 		prop_noise_nodes=0.20,
 		connectedness='medium',
 		multiclass=False,
-        hv='compute_pred',
-		feat='All',
+		hv='compute_pred',
+		feat='Expectation',
 		coal='Smarter',
-		g='WLR_sklearn',
+		g='WLS',
 		regu=None,
 		info=True
 	)
@@ -161,8 +161,13 @@ def main():
 										args.connectedness,
 										node_indices,
 										5,
+										args.info,
+										args.hv,
+										args.feat,
+										args.coal,
+										args.g,
 										args.multiclass,
-										args.info)
+										args.regu)
 
 		# Node features
 		filter_useless_features_multiclass(args.model,
@@ -174,8 +179,13 @@ def main():
 										   args.prop_noise_feat,
 										   node_indices,
 										   5,
+										   args.info,
+										   args.hv,
+										   args.feat,
+										   args.coal,
+										   args.g,
 										   args.multiclass,
-										   args.info)
+										   args.regu)
 
 	end_time = time.time()
 	print('Time: ', end_time - start_time)

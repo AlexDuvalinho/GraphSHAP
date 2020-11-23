@@ -1023,7 +1023,7 @@ class GraphSHAP():
 
 		# Isolate explanations for predicted class - explain model choices
 		if multiclass: 
-			pred_explanation = phi[:, true_pred]
+			pred_explanation = phi[true_pred, :]
 		else: 
 			pred_explanation = phi
 		
@@ -1033,7 +1033,7 @@ class GraphSHAP():
 		# Motivation for regularisation		
 		print('Weights for node features: ', sum(pred_explanation[:self.F]),
 		 'and neighbours: ', sum(pred_explanation[self.F:]))
-		print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[:self.F])),
+		print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[self.F:])),
 		 'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
 
 		# Note we focus on explanation for class predicted by the model here, so there is a bias towards
@@ -1089,7 +1089,7 @@ class GraphSHAP():
 			multiclass: if we look at explanations for all classes or only for the predicted one
 		"""
 		if multiclass: 
-			phi = torch.tensor(phi[:,predicted_class])
+			phi = torch.tensor(phi[predicted_class,:])
 		else:
 			phi = torch.from_numpy(phi).float()
 

@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 from torch_geometric.nn import GNNExplainer as GNNE
 
 from src.data import (add_noise_features, add_noise_neighbours,
-                      extract_test_nodes, prepare_data)
+					  extract_test_nodes, prepare_data)
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
-                            Greedy, Random)
+							Greedy, Random)
 from src.models import GAT, GCN
 from src.plots import plot_dist
 from src.train import accuracy, train_and_val
@@ -30,16 +30,21 @@ from src.utils import *
 
 
 def filter_useless_features_multiclass(args_model,
-										args_dataset,
-										args_explainers,
-										args_hops,
-										args_num_samples,
-										args_test_samples,
-										args_prop_noise_feat,
-										node_indices,
-                                       	args_K,
-										multiclass,
-										info=True):
+                                       args_dataset,
+                                       args_explainers,
+                                       args_hops,
+                                       args_num_samples,
+                                       args_test_samples,
+                                       args_prop_noise_feat,
+                                       node_indices,
+                                       args_K,
+                                       info,
+                                       args_hv,
+                                       args_feat,
+                                       args_coal,
+                                       args_g,
+                                       args_multiclass,
+                                       args_regu):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -101,11 +106,29 @@ def filter_useless_features_multiclass(args_model,
 		# K most influential features in our explanations
 		for node_idx in tqdm(node_indices, desc='explain node', leave=False):
 
+			if explainer_name == 'GraphSHAP':
+				coefs = explainer.explain(
+					[node_idx],
+					args_hops,
+					args_num_samples,
+					info,
+					args_multiclass,
+					args_hv,
+					args_feat,
+					args_coal,
+					args_g,
+					args_regu
+					)
+				coefs = coefs[0].T[:explainer.F]
+
 			# Explanations via GraphSHAP
-			coefs = explainer.explain(node_index=node_idx,
-									  hops=args_hops,
-									  num_samples=args_num_samples,
-									  info=False)
+			else:
+				coefs = explainer.explain(node_index=node_idx,
+										hops=args_hops,
+										num_samples=args_num_samples,
+										info=False, 
+										multiclass=True)
+			
 
 			# Check how many non zero features
 			F.append(explainer.F)
@@ -252,9 +275,14 @@ def filter_useless_nodes_multiclass(args_model,
 									args_prop_noise_nodes,
 									args_connectedness,
 									node_indices,
-                                    args_K,
-                                    multiclass=True,
-									info=True):
+									args_K,
+									info,
+                                    args_hv,
+                                    args_feat,
+                                    args_coal,
+                                    args_g,
+                                    args_multiclass,
+                                    args_regu):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -303,6 +331,13 @@ def filter_useless_nodes_multiclass(args_model,
 	# Study attention weights of noisy nodes in GAT model - compare attention with explanations
 	if str(type(model)) == "<class 'src.models.GAT'>":
 		study_attention_weights(data, model, args_test_samples)
+	
+	# Adaptable K - top k explanations we look at for each node
+	# Depends on number of existing features/neighbours considered for GraphSHAP
+	# if 'GraphSHAP' in args_explainers:
+	# 	K = []
+	# else:
+	# 	K = [5]*len(node_indices)
 
 	# Do for several explainers
 	for c, explainer_name in enumerate(args_explainers):
@@ -328,22 +363,35 @@ def filter_useless_nodes_multiclass(args_model,
 				coefs = explainer.explain_nei(node_index=node_idx,
 											  hops=args_hops,
 											  num_samples=args_num_samples,
-											  info=False)
+											  info=False,
+											  multiclass=True)
 
 			elif explainer_name == 'GNNExplainer':
 				_ = explainer.explain(node_index=node_idx,
 									  hops=args_hops,
 									  num_samples=args_num_samples,
-									  info=False)
+									  info=False,
+									  multiclass=True)
 				coefs = explainer.coefs
 
 			else:
 				# Explanations via GraphSHAP
-				coefs = explainer.explain(node_index=node_idx,
-										  hops=args_hops,
-										  num_samples=args_num_samples,
-										  info=False)
-				coefs = coefs[explainer.F:]
+				coefs = explainer.explain([node_idx],
+								args_hops,
+								args_num_samples,
+								info,
+								args_multiclass,
+								args_hv,
+								args_feat,
+								args_coal,
+								args_g,
+								args_regu)
+				coefs = coefs[0].T[explainer.F:]
+			
+			# if explainer.F > 50:
+			# 	K.append(10)
+			# else:
+			# 	K.append(int(explainer.F * args_K))
 
 			# Check how many non zero features
 			M.append(explainer.M)
@@ -422,7 +470,7 @@ def filter_useless_nodes_multiclass(args_model,
 	
 	total_num_noise_neis= [item/data.num_classes for item in total_num_noise_neis]
 	plot_dist(total_num_noise_neis, label='Random',
-	          color='y')
+			  color='y')
 
 	plt.savefig('results/eval1_node_{}'.format(data.name))
 	#plt.show()
@@ -487,7 +535,7 @@ def study_attention_weights(data, model, args_test_samples):
 
 	# remove self loops att
 	edges, alpha1 = alpha[0][:, :-
-                          (data.x.size(0))], alpha[1][:-(data.x.size(0)), :]
+						  (data.x.size(0))], alpha[1][:-(data.x.size(0)), :]
 	alpha2 = alpha_bis[1][:-(data.x.size(0))]
 
 	# Look at all importance coefficients of noisy nodes towards normal nodes
@@ -507,9 +555,9 @@ def study_attention_weights(data, model, args_test_samples):
 	# In fact, noisy nodes are slightly below average in terms of attention received
 	# Importance of interest: look only at imp. of noisy nei for test nodes
 	print('attention 1 av. for noisy nodes: ',
-            torch.mean(torch.stack(att1[0::2])))
+			torch.mean(torch.stack(att1[0::2])))
 	print('attention 2 av. for noisy nodes: ',
-            torch.mean(torch.stack(att2[0::2])))
+			torch.mean(torch.stack(att2[0::2])))
 
 	return torch.mean(alpha[1], axis=1)
 
