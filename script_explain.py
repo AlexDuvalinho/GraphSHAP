@@ -52,13 +52,13 @@ def build_arguments():
 		explainer='GraphSHAP',
 		node_indexes=[0,10],
 		hops=2,
-		num_samples=1000,
+		num_samples=100,
 		hv='compute_pred',
 		feat='Expectation',
-		coal='Smarter',
+		coal='SmarterRegu',
 		g='WLR_sklearn',
 		multiclass=False,
-		regu=None,
+		regu=0,
 		info=True
 	)
 
@@ -66,8 +66,9 @@ def build_arguments():
 
 # args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
 # args_feat: 'All', 'Expectation', 'Null', 'Random'
-# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus'
+# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu'
 # args_g: 'WLR', WLS, 'WLR_sklearn'
+# args_regu: 'None', integer in [0,1] (1 for feat only)
 
 def fix_seed(seed):
 	random.seed(seed)

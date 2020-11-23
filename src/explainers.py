@@ -51,7 +51,7 @@ class GraphSHAP():
 				hops=2, 
 				num_samples=10,
 				info=True,
-             	multiclass=False,
+			 	multiclass=False,
 				args_hv='compute_pred',
 				args_feat='Null', 
 				args_coal='Smarter', 
@@ -139,8 +139,9 @@ class GraphSHAP():
 			
 			# Def range of endcases considered 
 			args_K = 3
+
 			### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
-			z_ = eval('self.' + args_coal)(num_samples, args_K)
+			z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
 			
 			# Compute |z'| for each sample z': number of non-zero entries
 			s = (z_ != 0).sum(dim=1)
@@ -176,11 +177,11 @@ class GraphSHAP():
 				phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
 				phi[self.F:] = ((1-regu) * expl / sum(phi[self.F:]) ) * phi[self.F:]
 
-			### Print some information
+			### PRINT some information
 			if info:
 				self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
 
-			### Visualisation
+			### VISUALISATION
 				self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
 			
 			# Time
@@ -197,7 +198,119 @@ class GraphSHAP():
 	################################  
 	# Coalition sampler
 	################################
-	def SmarterPlus(self, num_samples, args_K):
+	def SmarterRegu(self, num_samples, args_K, regu):
+		""" Coalition sampling that favour neighbours or features 
+
+		"""
+		if not regu:
+			z_ = self.Smarter(num_samples, args_K, regu) 
+			return z_
+
+		# Favour features - special coalitions don't study node's effect
+		elif regu > 0.5:
+			# Define empty and full coalitions
+			z_ = torch.ones(num_samples, self.M)
+			z_[1::2] = torch.zeros(num_samples//2, self.M)
+			# z_[1, :] = torch.empty(1, self.M).random_(2)
+			i = 2 
+			k = 1
+			# Loop until all samples are created
+			while i < num_samples:
+				# Look at each feat/nei individually if have enough sample
+				# Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
+				if i + 2 * self.F < num_samples and k == 1:
+					z_[i:i+self.F, :] = torch.ones(self.F, self.M)
+					z_[i:i+self.F, :].fill_diagonal_(0)
+					z_[i+self.F:i+2*self.F, :] = torch.zeros(self.F, self.M)
+					z_[i+self.F:i+2*self.F, :].fill_diagonal_(1)
+					i += 2 * self.F
+					k += 1
+
+				else:
+					# Split in two number of remaining samples
+					# Half for specific coalitions with low k and rest random samples
+					samp = i + 2*(num_samples - i)//3
+					while i<samp and k<=min(args_K, self.F):
+						# Sample coalitions of k1 neighbours or k1 features without repet and order. 
+						L = list( combinations(range(self.F),k) )
+						random.shuffle(L)
+						L = L[:samp+1]
+
+						for j in range(len(L)):
+							# Coalitions (All nei, All-k feat) or (All feat, All-k nei)
+							z_[i, L[j]] = torch.zeros(k)
+							i += 1
+							# If limit reached, sample random coalitions
+							if i == samp:
+								z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+								return z_
+							# Coalitions (No nei, k feat) or (No feat, k nei)
+							z_[i, L[j]] = torch.ones(k)
+							i += 1
+							# If limit reached, sample random coalitions
+							if i == samp:
+								z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+								return z_
+						k += 1
+
+					# Sample random coalitions 
+					z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+					return z_
+			return z_
+		
+		# Favour neighbour
+		else: 
+			# Define empty and full coalitions
+			z_ = torch.ones(num_samples, self.M)
+			z_[1::2] = torch.zeros(num_samples//2, self.M)
+			i = 2 
+			k = 1
+			D = len(self.neighbours)
+			# Loop until all samples are created
+			while i < num_samples:
+				# Look at each feat/nei individually if have enough sample
+				# Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
+				if i + 2 * D < num_samples and k == 1:
+					z_[i:i+D, :] = torch.ones(D, self.M)
+					z_[i:i+D, :].fill_diagonal_(0)
+					z_[i+D:i+2*D, :] = torch.zeros(D, self.M)
+					z_[i+D:i+2*D, :].fill_diagonal_(1)
+					i += 2 * D
+					k += 1
+
+				else:
+					# Split in two number of remaining samples
+					# Half for specific coalitions with low k and rest random samples
+					samp = i + 2*(num_samples - i)//3
+					while i<samp and k<=min(args_K, D):
+						# Sample coalitions of k1 neighbours or k1 features without repet and order. 
+						L = list( combinations(range(self.F,self.M), k) )
+						random.shuffle(L)
+						L = L[:samp+1]
+
+						for j in range(len(L)):
+							# Coalitions (All nei, All-k feat) or (All feat, All-k nei)
+							z_[i, L[j]] = torch.zeros(k)
+							i += 1
+							# If limit reached, sample random coalitions
+							if i == samp:
+								z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+								return z_
+							# Coalitions (No nei, k feat) or (No feat, k nei)
+							z_[i, L[j]] = torch.ones(k)
+							i += 1
+							# If limit reached, sample random coalitions
+							if i == samp:
+								z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+								return z_
+						k += 1
+
+					# Sample random coalitions 
+					z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+					return z_
+			return z_
+
+	def SmarterPlus(self, num_samples, args_K, *unused):
 		""" Sample coalitions cleverly given shapley kernel def
 		Consider nodes and features separately to better capture their effect
 
@@ -258,7 +371,7 @@ class GraphSHAP():
 		
 		return z_
 
-	def Smarter(self, num_samples, args_K):
+	def Smarter(self, num_samples, args_K, *unused):
 		""" Sample coalitions cleverly given shapley kernel def
 		Consider nodes and features separately to better capture their effect
 
@@ -319,8 +432,7 @@ class GraphSHAP():
 				return z_
 		return z_
 
-
-	def Smart(self, num_samples, args_K):
+	def Smart(self, num_samples, *unused):
 		""" Sample coalitions cleverly given shapley kernel def
 
 		Args:
@@ -375,7 +487,7 @@ class GraphSHAP():
 
 		return z_
 	
-	def Random(self, num_samples, args_K):
+	def Random(self, num_samples, *unused):
 		z_ = torch.empty(num_samples, self.M).random_(2)
 		# z_[0, :] = torch.ones(self.M)
 		# z_[1, :] = torch.zeros(self.M)
@@ -1033,7 +1145,7 @@ class GraphSHAP():
 		# Motivation for regularisation		
 		print('Weights for node features: ', sum(pred_explanation[:self.F]),
 		 'and neighbours: ', sum(pred_explanation[self.F:]))
-		print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[self.F:])),
+		print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[:self.F])),
 		 'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
 
 		# Note we focus on explanation for class predicted by the model here, so there is a bias towards

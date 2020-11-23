@@ -136,13 +136,41 @@ def filter_useless_features(args_model,
 								args_g,
 								args_regu
 								)
+				# Look only at features coefficients 
+				# Neighbours are irrelevant here
 				coefs = coefs[0][:explainer.F]
+				
 				# Adaptable K
 				if explainer.F > 50:
 					K.append(10)
 				else:
 					K.append(int(explainer.F * args_K))
-			
+
+				# Num_features_considered
+				if args_feat == 'Null':
+					feat_idx = noise_feat[explainer.neighbours, :].mean(axis=0).nonzero()
+					num_noise_feat_considered = feat_idx.size()[0]
+
+				# Consider all features (+ use expectation like below)
+				elif args_feat == 'All':
+					num_noise_feat_considered = args_num_noise_feat
+
+				# Consider only features whose aggregated value is different from expected one
+				else:
+					# Stats dataset
+					var = noise_feat.std(axis=0)
+					mean = noise_feat.mean(axis=0)
+					# Feature intermediate rep
+					mean_subgraph = noise_feat[explainer.neighbours, :].mean(axis=0)
+					# Select relevant features only - (E-e,E+e)
+					mean_subgraph = torch.where(mean_subgraph > mean - 0.25*var, mean_subgraph,
+										torch.ones_like(mean_subgraph)*100)
+					mean_subgraph = torch.where(mean_subgraph < mean + 0.25*var, mean_subgraph,
+										torch.ones_like(mean_subgraph)*100)
+					feat_idx = (mean_subgraph == 100).nonzero()
+					num_noise_feat_considered = feat_idx.shape[0]
+					del mean, mean_subgraph, var
+				
 			else:
 				coefs = explainer.explain(node_idx,
 										args_hops,
@@ -150,15 +178,14 @@ def filter_useless_features(args_model,
 										info=False,
 										multiclass=False
 										)[:explainer.F]
+				# All features are considered
+				num_noise_feat_considered = args_num_noise_feat
 
 			# Number of non-zero noisy features is different
 			# for explainers with all features considered vs non-zero features only (shap,graphshap)
-			#if explainer.F != data.x.size(1):
-			#	num_noise_feat_considered = len(
-			#		[val for val in noise_feat[node_idx] if val != 0])
-			#else:
-			#	num_noise_feat_considered = args_num_noise_feat
-			num_noise_feat_considered = args_num_noise_feat
+			if explainer.F != data.x.size(1):
+				num_noise_feat_considered = len(
+					[val for val in noise_feat[node_idx] if val != 0])
 
 			# Features considered 
 			F.append(explainer.F)
@@ -189,7 +216,7 @@ def filter_useless_features(args_model,
 
 			perc = 100 * sum(total_num_noise_feat_considered) / sum(F)
 			print(
-				'Proportion of non-zero noisy features among non-zero features: {:.2f}%'.format(perc))
+				'Proportion of considered noisy features among features: {:.2f}%'.format(perc))
 
 			perc = 100 * sum(pred_class_num_noise_feats) / sum(K)
 			print('Proportion of explanations showing noisy features: {:.2f}%'.format(perc))
@@ -387,7 +414,6 @@ def filter_useless_nodes(args_model,
 
 			# Store indexes of K most important features, for each class
 			nei_indices = np.abs(coefs).argsort()[-K[j]:].tolist()
-			# nei_indices = np.abs(coefs[:, predicted_classes[j]]).argsort()[-K[j]:].tolist()
 
 			# Number of noisy features that appear in explanations - use index to spot them
 			num_noise_nei = sum(

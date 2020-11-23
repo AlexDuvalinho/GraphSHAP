@@ -78,7 +78,7 @@ def build_arguments():
 		multiclass=False,
 		hv='compute_pred',
 		feat='Expectation',
-		coal='Smarter',
+		coal='SmarterRegu',
 		g='WLS',
 		regu=None,
 		info=True
@@ -86,8 +86,9 @@ def build_arguments():
 
 	# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
 	# args_feat: 'All', 'Expectation', 'Null', 'Random'
-	# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus'
+	# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu'
 	# args_g: 'WLR', WLS, 'WLR_sklearn'
+	# args_regu: 'None', integer in [0,1] (1 for feat only)
 
 	args = parser.parse_args()
 	return args
@@ -111,8 +112,11 @@ def main():
 
 	if args.multiclass == False:
 
+		# Only study neighbours 
+		if args.coal == 'SmarterRegu':
+			args.regu = 0
+
 		# Neighbours
-		"""
 		filter_useless_nodes(args.model,
 							 args.dataset,
 							 args.node_explainers,
@@ -130,7 +134,11 @@ def main():
 							 args.g,
 							 args.multiclass,
 							 args.regu)
-		"""
+		
+		# Only study features
+		if args.coal == 'SmarterRegu':
+			args.regu = 1
+
 		# Features
 		filter_useless_features(args.model,
 								args.dataset,
