@@ -44,7 +44,8 @@ def filter_useless_features(args_model,
 							args_coal,
 							args_g,
 							args_multiclass,
-							args_regu):
+							args_regu,
+                            args_gpu):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -107,7 +108,7 @@ def filter_useless_features(args_model,
 	for c, explainer_name in enumerate(args_explainers):
 		
 		# Define explainer
-		explainer = eval(explainer_name)(data, model)
+		explainer = eval(explainer_name)(data, model, args_gpu)
 		print('EXPLAINER: ', explainer_name)
 
 		# count noisy features found in explanations 
@@ -134,7 +135,7 @@ def filter_useless_features(args_model,
 								args_feat,
 								args_coal,
 								args_g,
-								args_regu
+								args_regu,
 								)
 				# Look only at features coefficients 
 				# Neighbours are irrelevant here
@@ -297,7 +298,8 @@ def filter_useless_nodes(args_model,
 						 args_coal,
 						 args_g,
 						 args_multiclass,
-						 args_regu):
+						 args_regu,
+                         args_gpu):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -360,7 +362,7 @@ def filter_useless_nodes(args_model,
 
 		print('EXPLAINER: ', explainer_name)	
 		# Define the explainer
-		explainer = eval(explainer_name)(data, model)
+		explainer = eval(explainer_name)(data, model, args_gpu)
 
 		# Loop on each test sample and store how many times do noisy nodes appear among
 		# K most influential features in our explanations
@@ -550,7 +552,8 @@ def eval_shap(args_dataset,
 			  args_coal,
 			  args_g,
 			  args_multiclass,
-			  args_regu):
+			  args_regu,
+              args_gpu):
 	"""
 	Compares SHAP and GraphSHAP on graph based datasets
 	Check if they agree on features'contribution towards prediction for several test samples
@@ -586,8 +589,8 @@ def eval_shap(args_dataset,
 	for node_idx in tqdm(node_indices, desc='explain node', leave=False):
 
 		# Define explainers we would like to compare
-		graphshap = GraphSHAP(data, model)
-		shap = SHAP(data, model)
+		graphshap = GraphSHAP(data, model, args_gpu)
+		shap = SHAP(data, model, args_gpu)
 
 		# Explanations via GraphSHAP
 		graphshap_coefs = graphshap.explain(node_index=node_idx,

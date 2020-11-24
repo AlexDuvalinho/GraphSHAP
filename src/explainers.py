@@ -37,9 +37,10 @@ warnings.filterwarnings("ignore")
 
 class GraphSHAP():
 
-	def __init__(self, data, model):
+	def __init__(self, data, model, gpu=False):
 		self.model = model
 		self.data = data
+		self.gpu = gpu
 		self.F = None  # number of non zero node features
 		self.neighbours = None  # neighbours considered
 		self.M = None  # number of nonzero features - for each node index
@@ -149,9 +150,16 @@ class GraphSHAP():
 			s = (z_ != 0).sum(dim=1)
 
 			# Compute true prediction of model, for original instance
-			with torch.no_grad():
-				true_conf, true_pred = self.model(
-					x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+			if self.gpu: 
+				with torch.no_grad():
+					true_conf, true_pred = self.model(
+						x=self.data.x.cuda(), 
+						edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+			else: 
+				with torch.no_grad():
+					true_conf, true_pred = self.model(
+						x=self.data.x, 
+						edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
 
 			### GRAPHSHAP KERNEL: define weights associated with each sample 
 			weights = self.shapley_kernel(s)
@@ -623,8 +631,12 @@ class GraphSHAP():
 					X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
 				
 			# Apply model on (X,A) as input.
-			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+			if self.gpu:
+				with torch.no_grad():
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+			else: 
+				with torch.no_grad():
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
 
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(
@@ -724,8 +736,12 @@ class GraphSHAP():
 							[[l[n-1]], [l[n]]])), dim=-1)
 				
 			# Apply model on (X,A) as input.
-			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+			if self.gpu:
+				with torch.no_grad():
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+			else:
+				with torch.no_grad():
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
 
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(
@@ -809,8 +825,12 @@ class GraphSHAP():
 				X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
 
 			# Apply model on (X,A) as input.
-			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+			if self.gpu:
+				with torch.no_grad():
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+			else:
+				with torch.no_grad():
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
 
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(
@@ -907,8 +927,12 @@ class GraphSHAP():
 						X[l[n], :] = av_feat_values
 
 			# Apply model on (X,A) as input.
-			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+			if self.gpu:
+				with torch.no_grad():
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+			else:
+				with torch.no_grad():
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
 
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(
@@ -984,8 +1008,12 @@ class GraphSHAP():
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 				
 			# Apply model on (X,A) as input.
-			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+			if self.gpu:
+				with torch.no_grad():
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+			else: 
+				with torch.no_grad():
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
 
 			# Store final class prediction and confience level
 			pred_confidence[key], classes_labels[key] = torch.topk(
@@ -1288,10 +1316,11 @@ class GraphSHAP():
 
 class Greedy:
 
-	def __init__(self, data, model):
+	def __init__(self, data, model, gpu=False):
 		self.model = model
 		self.data = data
 		self.neighbours = None
+		self.gpu = gpu
 		self.M = self.data.x.size(1)
 		self.F = self.M
 
@@ -1312,9 +1341,14 @@ class Greedy:
 		feat_idx = torch.arange(self.F)
 
 		# Compute predictions
-		with torch.no_grad():
-			probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
-				node_index]
+		if self.gpu: 
+			with torch.no_grad():
+				probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+					node_index]
+		else: 
+			with torch.no_grad():
+				probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
+					node_index]
 		probas, label = torch.topk(probas, k=1)
 
 		# Init explanations vector
@@ -1327,9 +1361,14 @@ class Greedy:
 				idx = idx.item()
 				x_ = deepcopy(self.data.x)
 				x_[:, idx] = 0.0  # set feat of interest to 0
-				with torch.no_grad():
-					probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
-						node_index]  # [label].item()
+				if self.gpu: 
+					with torch.no_grad():
+						probas_ = self.model(x=x_.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+							node_index]  # [label].item()
+				else:
+					with torch.no_grad():
+						probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
+							node_index]  # [label].item()
 				# Compute explanations with the following formula
 				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 		else: 
@@ -1340,9 +1379,14 @@ class Greedy:
 				idx = idx.item()
 				x_ = deepcopy(self.data.x)
 				x_[:, idx] = 0.0  # set feat of interest to 0
-				with torch.no_grad():
-					probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
-						node_index, label.item()]  # [label].item()
+				if self.gpu: 
+					with torch.no_grad():
+						probas_ = self.model(x=x_.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+							node_index, label.item()]  # [label].item()
+				else:
+					with torch.no_grad():
+						probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
+							node_index, label.item()]  # [label].item()
 				# Compute explanations with the following formula
 				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
@@ -1366,9 +1410,14 @@ class Greedy:
 		self.M = neighbours.shape[0]
 
 		# Compute predictions
-		with torch.no_grad():
-			probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
-				node_index]
+		if self.gpu: 
+			with torch.no_grad():
+				probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+					node_index]
+		else: 
+			with torch.no_grad():
+				probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
+					node_index]
 		pred_confidence, label = torch.topk(probas, k=1)
 
 		if multiclass:
@@ -1389,10 +1438,14 @@ class Greedy:
 				A_ = torch.tensor(A_)
 
 				# Compute new prediction with updated adj matrix (without this neighbour)
-				with torch.no_grad():
-					probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
-						node_index]  # [label].item()
-				
+				if self.gpu: 
+					with torch.no_grad():
+						probas_ = self.model(x=self.data.x.cuda(), edge_index=A_.cuda()).exp()[
+							node_index]
+				else: 
+					with torch.no_grad():
+						probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
+							node_index]
 				# Compute explanations with the following formula
 				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
@@ -1412,10 +1465,14 @@ class Greedy:
 				A_ = torch.tensor(A_)
 
 				# Compute new prediction with updated adj matrix (without this neighbour)
-				with torch.no_grad():
-					probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
-						node_index, label.item() ]  # [label].item()
-
+				if self.gpu:
+					with torch.no_grad():
+						probas_ = self.model(x=self.data.x.cuda(), edge_index=A_.cuda()).exp()[
+							node_index, label.item()]
+				else:
+					with torch.no_grad():
+						probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
+							node_index, label.item()]
 				# Compute explanations with the following formula
 				coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
 
@@ -1434,7 +1491,7 @@ class Random:
 
 class GraphLIME:
 
-	def __init__(self, data, model, hop=2, rho=0.1, cached=True):
+	def __init__(self, data, model, gpu=False, hop=2, rho=0.1, cached=True):
 		self.data = data
 		self.model = model
 		self.hop = hop
@@ -1443,6 +1500,7 @@ class GraphLIME:
 		self.cached_result = None
 		self.M = data.x.size(1)
 		self.F = data.x.size(1)
+		self.gpu = gpu
 
 		self.model.eval()
 
@@ -1481,7 +1539,10 @@ class GraphLIME:
 		if not self.cached or self.cached_result is None:
 			# Get the initial prediction.
 			with torch.no_grad():
-				log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
+				if self.gpu: 
+					log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
+				else: 
+					log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
 				probas = log_logits.exp()
 
 			self.cached_result = probas
@@ -1570,9 +1631,10 @@ class GraphLIME:
 
 class LIME:
 
-	def __init__(self, data, model, cached=True):
+	def __init__(self, data, model, gpu=False, cached=True):
 		self.data = data
 		self.model = model
+		self.gpu = gpu
 		self.M = data.x.size(1)
 		self.F = data.x.size(1)
 
@@ -1582,7 +1644,10 @@ class LIME:
 		
 		# Get the initial prediction.
 		with torch.no_grad():
-			log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
+			if self.gpu: 
+				log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
+			else:
+				log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
 			probas = log_logits.exp()
 
 		return probas
@@ -1608,7 +1673,10 @@ class LIME:
 					torch.randn_like(original_feats)
 
 				with torch.no_grad():
-					log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+					if self.gpu:
+						log_logits = self.model(x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
+					else: 
+						log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
 					probas_ = log_logits.exp()
 
 				#proba_ = probas_[node_index, label]
@@ -1628,7 +1696,10 @@ class LIME:
 					torch.randn_like(original_feats)
 
 				with torch.no_grad():
-					log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+					if self.gpu:
+						log_logits = self.model(x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
+					else:
+						log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
 					probas_ = log_logits.exp()
 
 				proba_ = probas_[node_index, label]
@@ -1649,9 +1720,10 @@ class LIME:
 
 class SHAP():
 
-	def __init__(self, data, model):
+	def __init__(self, data, model, gpu=False):
 		self.model = model
 		self.data = data
+		self.gpu = gpu
 		self.M = data.x.size(1)  # number of nonzero features - for each node index
 		self.neighbours = None
 		self.F = self.M
@@ -1689,8 +1761,12 @@ class SHAP():
 
 		# Compute true prediction of model, for original instance
 		with torch.no_grad():
-			true_conf, true_pred = self.model(
-				x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+			if self.gpu: 
+				true_conf, true_pred = self.model(
+					x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+			else:
+				true_conf, true_pred = self.model(
+					x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
 
 		# Multiclass 
 		if not multiclass: 
@@ -1765,7 +1841,11 @@ class SHAP():
 
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
-				proba = self.model(x=X, edge_index=A).exp()[node_index]
+				if self.gpu:
+					proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+				else:
+					proba = self.model(x=X, edge_index=A).exp()[node_index]
+					
 
 			# Store final class prediction and confience level
 			# pred_confidence[i], classes_labels[i] = torch.topk(proba, k=1) # optional
@@ -1798,10 +1878,11 @@ class SHAP():
 
 class GNNExplainer():
 
-	def __init__(self, data, model):
+	def __init__(self, data, model, gpu=False):
 		self.data = data
 		self.model = model
 		self.M = data.x.size(0) + data.x.size(1)
+		self.gpu = gpu
 		# self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
 		self.coefs = None  # node importance derived from edge importance
 		self.edge_mask = None

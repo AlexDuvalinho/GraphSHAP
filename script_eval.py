@@ -60,6 +60,8 @@ def build_arguments():
 					 help='None if we do not apply regularisation, 1 if only feat')
 	parser.add_argument("--info", type=bool,
 					 help='True if we want to see info about the explainer')
+	parser.add_argument("--gpu", type=bool,
+                     help='True if want to use gpu')
 
 	parser.set_defaults(
 		model='GAT',
@@ -69,7 +71,7 @@ def build_arguments():
 					'SHAP', 'LIME'],
 		node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
 		hops=2,
-		num_samples=500,
+		num_samples=100,
 		test_samples=10,
 		K=0.15,
 		prop_noise_feat=0.20,
@@ -81,7 +83,8 @@ def build_arguments():
 		coal='Smarter',
 		g='WLR_sklearn',
 		regu=None,
-		info=True
+		info=True,
+		gpu=False
 	)
 
 	# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
@@ -133,7 +136,8 @@ def main():
 							 args.coal,
 							 args.g,
 							 args.multiclass,
-							 args.regu)
+							 args.regu,
+							 args.gpu)
 		
 		# Only study features
 		if args.coal == 'SmarterRegu':
@@ -155,7 +159,8 @@ def main():
 								args.coal,
 								args.g,
 								args.multiclass,
-								args.regu)
+								args.regu,
+								args.gpu)
 
 	else:
 		# Neighbours
@@ -175,7 +180,8 @@ def main():
 										args.coal,
 										args.g,
 										args.multiclass,
-										args.regu)
+										args.regu,
+                                  		args.gpu)
 
 		# Node features
 		filter_useless_features_multiclass(args.model,
@@ -193,7 +199,8 @@ def main():
 										   args.coal,
 										   args.g,
 										   args.multiclass,
-										   args.regu)
+										   args.regu,
+										   args.gpu)
 
 	end_time = time.time()
 	print('Time: ', end_time - start_time)

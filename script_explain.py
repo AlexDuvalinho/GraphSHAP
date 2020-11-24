@@ -44,6 +44,8 @@ def build_arguments():
                      help='None if we do not apply regularisation, 1 if only feat')
 	parser.add_argument("--info", type=bool,
                      help='True if want to print info')
+	parser.add_argument("--gpu", type=bool,
+                     help='True if want to use gpu')
 
 	parser.set_defaults(
 		model='GCN',
@@ -59,7 +61,8 @@ def build_arguments():
 		g='WLR_sklearn',
 		multiclass=False,
 		regu=0,
-		info=True
+		info=True,
+        gpu=False
 	)
 
 	return parser.parse_args()
@@ -100,7 +103,7 @@ def main():
 	del log_logits
 
 	# Explain it with GraphSHAP
-	explainer = eval(args.explainer)(data, model)
+	explainer = eval(args.explainer)(data, model, args.gpu)
 	explanations = explainer.explain(args.node_indexes,
 									 args.hops,
 									 args.num_samples,

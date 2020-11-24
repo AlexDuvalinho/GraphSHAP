@@ -44,7 +44,8 @@ def filter_useless_features_multiclass(args_model,
                                        args_coal,
                                        args_g,
                                        args_multiclass,
-                                       args_regu):
+                                       args_regu,
+                                       args_gpu):
 	""" Add noisy features to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -92,7 +93,7 @@ def filter_useless_features_multiclass(args_model,
 	for c, explainer_name in enumerate(args_explainers):
 
 		# Define explainer
-		explainer = eval(explainer_name)(data, model)
+		explainer = eval(explainer_name)(data, model, args_gpu)
 
 		# count noisy features found in explanations for each test sample (for each class)
 		total_num_noise_feats = []
@@ -282,7 +283,8 @@ def filter_useless_nodes_multiclass(args_model,
                                     args_coal,
                                     args_g,
                                     args_multiclass,
-                                    args_regu):
+                                    args_regu, 
+                                    args_gpu):
 	""" Add noisy neighbours to dataset and check how many are included in explanations
 	The fewest, the better the explainer.
 
@@ -344,7 +346,7 @@ def filter_useless_nodes_multiclass(args_model,
 		
 		print('EXPLAINER: ', explainer_name)
 		# Define the explainer
-		explainer = eval(explainer_name)(data, model)
+		explainer = eval(explainer_name)(data, model, args_gpu)
 
 		# Loop on each test sample and store how many times do noisy nodes appear among
 		# K most influential features in our explanations
