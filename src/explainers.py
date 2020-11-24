@@ -53,10 +53,11 @@ class GraphSHAP():
 				info=True,
 			 	multiclass=False,
 				args_hv='compute_pred',
-				args_feat='Null', 
+				args_feat='Expectation', 
 				args_coal='Smarter', 
-				args_g = 'WLR',
-				regu=None):
+				args_g = 'WLS',
+				regu=None,
+				vizu=False):
 		""" Explain prediction for a particular node - GraphSHAP method
 
 		Args:
@@ -100,7 +101,7 @@ class GraphSHAP():
 															edge_index=self.data.edge_index)
 
 			# Determine z': features and neighbours whose importance is investigated
-
+			discarded_feat_idx = []
 			# Consider only non-zero entries in the subgraph of v
 			if args_feat == 'Null':
 				feat_idx = self.data.x[self.neighbours, :].mean(axis=0).nonzero()
@@ -114,18 +115,19 @@ class GraphSHAP():
 			# Consider only features whose aggregated value is different from expected one
 			else: 
 				# Stats dataset
-				var = self.data.x.std(axis=0)
+				std = self.data.x.std(axis=0)
 				mean = self.data.x.mean(axis=0)
 				# Feature intermediate rep
 				mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
 				# Select relevant features only - (E-e,E+e)
-				mean_subgraph = torch.where(mean_subgraph > mean - 0.25*var, mean_subgraph,
+				mean_subgraph = torch.where(mean_subgraph > mean - 0.25*std, mean_subgraph,
 							torch.ones_like(mean_subgraph)*100)
-				mean_subgraph = torch.where(mean_subgraph < mean + 0.25*var, mean_subgraph,
+				mean_subgraph = torch.where(mean_subgraph < mean + 0.25*std, mean_subgraph,
 							torch.ones_like(mean_subgraph)*100)
 				feat_idx = (mean_subgraph == 100).nonzero()
+				discarded_feat_idx = (mean_subgraph != 100).nonzero()
 				self.F = feat_idx.shape[0]
-				del mean, mean_subgraph, var
+				del mean, mean_subgraph, std
 			
 			# Potentially do a feature selection with Lasso (or otherwise)
 			# Long process
@@ -138,7 +140,7 @@ class GraphSHAP():
 			self.M = self.F+D
 			
 			# Def range of endcases considered 
-			args_K = 3
+			args_K = 5
 
 			### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
 			z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
@@ -160,7 +162,7 @@ class GraphSHAP():
 			### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
 			# Retrive z from z' and x_v, then compute f(z)
 			fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-								feat_idx, one_hop_neighbours, args_K, args_feat)
+								feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
 			
 			#### MULTICLASS / Predicted class only
 			if not multiclass: 
@@ -182,6 +184,7 @@ class GraphSHAP():
 				self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
 
 			### VISUALISATION
+			if vizu:
 				self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
 			
 			# Time
@@ -524,7 +527,7 @@ class GraphSHAP():
 	################################
 	# COMPUTE PREDICTIONS f(z)
 	################################
-	def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+	def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -595,12 +598,13 @@ class GraphSHAP():
 
 			# Change feature vector for node of interest
 			X = deepcopy(self.data.x)
+			X[node_index, ex_feat] = av_feat_values[ex_feat]
+			if discarded_feat_idx!=[] and len(self.neighbours) < args_K:
+				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
+
 			# Special case - consider only nei. influence if too few feat included
 			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
-				for val in ex_feat:
-					# Change excluded feature values only for v 
-					X[node_index, val] = av_feat_values[val]  # 0
-
+				
 				# Look at the 2-hop neighbours included
 				# Make sure that they are connected to v (with current nodes sampled nodes)
 				included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
@@ -612,10 +616,9 @@ class GraphSHAP():
 						A = torch.cat((A, torch.tensor(
 							[[l[n-1]], [l[n]]] )), dim=-1)
 						X[l[n], :] = av_feat_values
-							
+
 			# Usual case - exclude features for the whole subgraph
 			else:
-				X[node_index, ex_feat] = av_feat_values[ex_feat]
 				for val in ex_feat:
 					X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
 				
@@ -633,7 +636,7 @@ class GraphSHAP():
 
 		return fz
 
-	def basic_default_2hop(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+	def basic_default_2hop(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -702,6 +705,9 @@ class GraphSHAP():
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
 
+			# Set discarded features to an average value when few neighbours
+			if discarded_feat_idx and len(self.neighbours)<args_K:
+				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
 			for val in ex_feat:
 				X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
@@ -716,7 +722,7 @@ class GraphSHAP():
 					for n in range(1, len(l)-1):
 						A = torch.cat((A, torch.tensor(
 							[[l[n-1]], [l[n]]])), dim=-1)
-
+				
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
 				proba = self.model(x=X, edge_index=A).exp()[node_index]
@@ -731,7 +737,7 @@ class GraphSHAP():
 
 		return fz
 
-	def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+	def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -792,13 +798,15 @@ class GraphSHAP():
 			A = np.delete(A, positions, axis=1)
 			A = torch.tensor(A)
 
-			# Change feature vector for node of interest
+			# Change feature vector for node of interest and the whole subgraph
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
-
+			X[node_index, ex_feat] = av_feat_values[ex_feat]
+			if discarded_feat_idx and len(self.neighbours) < args_K:
+				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
+			
 			for val in ex_feat:
 				X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
-				X[node_index, val] = av_feat_values[val]
 
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
@@ -814,7 +822,7 @@ class GraphSHAP():
 
 		return fz
 
-	def node_specific(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+	def node_specific(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -839,7 +847,7 @@ class GraphSHAP():
 		excluded_nei = {}
 
 		# Define excluded_feat and excluded_nei for each z'
-		for i in tqdm(range(num_samples)):
+		for i in range(num_samples):
 
 			# Define new node features dataset (we only modify x_v for now)
 			# Store index of features that are not sampled (z_j=0)
@@ -865,7 +873,7 @@ class GraphSHAP():
 		pred_confidence = torch.zeros(num_samples)
 
 		# Create new matrix A and X - for each sample ≈ reform z from z'
-		for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
+		for (key, ex_nei), (_, ex_feat)  in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
 			positions = []
 			# For each excluded neighbour, retrieve the column index of its occurences
@@ -883,6 +891,8 @@ class GraphSHAP():
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
+			if discarded_feat_idx and len(self.neighbours) < args_K:
+				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 
 			# Special case - consider only nei. influence if too few feat included
 			if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):	
@@ -910,7 +920,7 @@ class GraphSHAP():
 
 		return fz
 
-	def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat):
+	def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
 		""" Construct z from z' and compute prediction f(z) for each sample z'
 			In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -970,6 +980,8 @@ class GraphSHAP():
 			X[ex_nei,:]=av_feat_values.repeat(len(ex_nei),1)
 			# Only for node index
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
+			if discarded_feat_idx and len(self.neighbours) < args_K:
+				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 				
 			# Apply model on (X,A) as input.
 			with torch.no_grad():
@@ -1576,6 +1588,7 @@ class LIME:
 		return probas
 
 	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, **kwargs):
+		num_samples = num_samples//3
 		x = self.data.x
 		edge_index = self.data.edge_index
 
@@ -1645,13 +1658,14 @@ class SHAP():
 
 		self.model.eval()
 
-	def explain(self, node_index=0, hops=2, num_samples=10, info=True, multiclass= False, *unused):
+	def explain(self, node_index=0, hops=2, num_samples=10, info=True, multiclass=False, *unused):
 		"""
 		:param node_index: index of the node of interest
 		:param hops: number k of k-hop neighbours to consider in the subgraph around node_index
 		:param num_samples: number of samples we want to form GraphSHAP's new dataset 
 		:return: shapley values for features that influence node v's pred
 		"""
+
 		# Determine z' => features and neighbours whose importance is investigated
 
 		# Create a variable to store node features
@@ -1797,6 +1811,7 @@ class GNNExplainer():
 		self.model.eval()
 
 	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused):
+		num_samples = num_samples//3
 		# Use GNNE open source implem - outputs features's and edges importance
 		explainer = GNNE(self.model, epochs=num_samples)
 		node_feat_mask, self.edge_mask = explainer.explain_node(
