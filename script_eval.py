@@ -62,7 +62,7 @@ def build_arguments():
 					 help='True if we want to see info about the explainer')
 
 	parser.set_defaults(
-		model='GCN',
+		model='GAT',
 		dataset='Cora',
 		seed=10,
 		explainers=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
@@ -71,7 +71,7 @@ def build_arguments():
 		hops=2,
 		num_samples=500,
 		test_samples=10,
-		K=0.25,
+		K=0.15,
 		prop_noise_feat=0.20,
 		prop_noise_nodes=0.20,
 		connectedness='medium',
@@ -79,7 +79,7 @@ def build_arguments():
 		hv='compute_pred',
 		feat='Expectation',
 		coal='Smarter',
-		g='WLS',
+		g='WLR_sklearn',
 		regu=None,
 		info=True
 	)

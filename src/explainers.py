@@ -599,7 +599,7 @@ class GraphSHAP():
 			# Change feature vector for node of interest
 			X = deepcopy(self.data.x)
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
-			if discarded_feat_idx!=[] and len(self.neighbours) < args_K:
+			if discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 
 			# Special case - consider only nei. influence if too few feat included
@@ -706,7 +706,7 @@ class GraphSHAP():
 			X = deepcopy(self.data.x)
 
 			# Set discarded features to an average value when few neighbours
-			if discarded_feat_idx and len(self.neighbours)<args_K:
+			if discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
 			for val in ex_feat:
@@ -802,7 +802,7 @@ class GraphSHAP():
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
-			if discarded_feat_idx and len(self.neighbours) < args_K:
+			if discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 			
 			for val in ex_feat:
@@ -891,7 +891,7 @@ class GraphSHAP():
 			# NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
 			X = deepcopy(self.data.x)
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
-			if discarded_feat_idx and len(self.neighbours) < args_K:
+			if discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 
 			# Special case - consider only nei. influence if too few feat included
@@ -980,7 +980,7 @@ class GraphSHAP():
 			X[ex_nei,:]=av_feat_values.repeat(len(ex_nei),1)
 			# Only for node index
 			X[node_index, ex_feat] = av_feat_values[ex_feat]
-			if discarded_feat_idx and len(self.neighbours) < args_K:
+			if discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
 				X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 				
 			# Apply model on (X,A) as input.
