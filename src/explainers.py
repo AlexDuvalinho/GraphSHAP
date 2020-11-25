@@ -1345,6 +1345,9 @@ class Greedy:
 
 		# Compute predictions
 		if self.gpu: 
+			device = torch.device(
+					'cuda' if torch.cuda.is_available() else 'cpu')
+			self.model = self.model.to(device)
 			with torch.no_grad():
 				probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
 					node_index]
@@ -1414,6 +1417,9 @@ class Greedy:
 
 		# Compute predictions
 		if self.gpu: 
+			device = torch.device(
+					'cuda' if torch.cuda.is_available() else 'cpu')
+			self.model = self.model.to(device)
 			with torch.no_grad():
 				probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
 					node_index]
@@ -1543,6 +1549,9 @@ class GraphLIME:
 			# Get the initial prediction.
 			with torch.no_grad():
 				if self.gpu: 
+					device = torch.device(
+							'cuda' if torch.cuda.is_available() else 'cpu')
+					self.model = self.model.to(device)
 					log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
 				else: 
 					log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
@@ -1648,6 +1657,9 @@ class LIME:
 		# Get the initial prediction.
 		with torch.no_grad():
 			if self.gpu: 
+				device = torch.device(
+						'cuda' if torch.cuda.is_available() else 'cpu')
+				self.model = self.model.to(device)
 				log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
 			else:
 				log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
@@ -1765,6 +1777,9 @@ class SHAP():
 		# Compute true prediction of model, for original instance
 		with torch.no_grad():
 			if self.gpu: 
+				device = torch.device(
+					'cuda' if torch.cuda.is_available() else 'cpu')
+				self.model = self.model.to(device)
 				true_conf, true_pred = self.model(
 					x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
 			else:
@@ -1897,6 +1912,9 @@ class GNNExplainer():
 	def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused):
 		num_samples = num_samples//3
 		# Use GNNE open source implem - outputs features's and edges importance
+		if self.gpu: 
+			device = torch.device('cpu')
+			self.model = self.model.to(device)
 		explainer = GNNE(self.model, epochs=num_samples)
 		node_feat_mask, self.edge_mask = explainer.explain_node(
 			node_index, self.data.x, self.data.edge_index)

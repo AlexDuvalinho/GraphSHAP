@@ -83,7 +83,7 @@ def build_arguments():
 		coal='Smarter',
 		g='WLR_sklearn',
 		regu=None,
-		info=True,
+		info=False,
 		gpu=False
 	)
 
