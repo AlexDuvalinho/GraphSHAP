@@ -61,7 +61,7 @@ def build_arguments():
 	parser.add_argument("--info", type=bool,
 					 help='True if we want to see info about the explainer')
 	parser.add_argument("--gpu", type=bool,
-                     help='True if want to use gpu')
+					 help='True if want to use gpu')
 
 	parser.set_defaults(
 		model='GAT',
@@ -120,6 +120,7 @@ def main():
 			args.regu = 0
 
 		# Neighbours
+		"""
 		filter_useless_nodes(args.model,
 							 args.dataset,
 							 args.node_explainers,
@@ -131,14 +132,14 @@ def main():
 							 args.connectedness,
 							 node_indices,
 							 args.info,
-                       		 args.hv, #node_specific
+					   		 args.hv, #node_specific
 							 args.feat,
 							 args.coal,
 							 args.g,
 							 args.multiclass,
 							 args.regu,
 							 args.gpu)
-		
+		"""
 		# Only study features
 		if args.coal == 'SmarterRegu':
 			args.regu = 1
@@ -181,7 +182,7 @@ def main():
 										args.g,
 										args.multiclass,
 										args.regu,
-                                  		args.gpu)
+								  		args.gpu)
 
 		# Node features
 		filter_useless_features_multiclass(args.model,
