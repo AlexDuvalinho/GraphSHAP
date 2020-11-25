@@ -151,6 +151,9 @@ class GraphSHAP():
 
 			# Compute true prediction of model, for original instance
 			if self.gpu: 
+				device = torch.device(
+					'cuda' if torch.cuda.is_available() else 'cpu')
+				self.model = self.model.to(device)
 				with torch.no_grad():
 					true_conf, true_pred = self.model(
 						x=self.data.x.cuda(), 
