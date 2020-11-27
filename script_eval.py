@@ -77,11 +77,11 @@ def build_arguments():
         prop_noise_nodes=0.20,
         connectedness='medium',
         multiclass=False,
-        hv='compute_pred',
+        hv='compute_pred_regu',
         feat='Expectation',
-        coal='Smarter',
+        coal='SmarterRegu',
         g='WLR_sklearn',
-        regu=None,
+        regu=0,
         info=False,
         gpu=False
     )

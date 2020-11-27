@@ -88,6 +88,21 @@ class GraphSHAP():
         phi_list = []
         for node_index in node_indexes: 
 
+            # Compute true prediction of model, for original instance
+            if self.gpu: 
+                device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu')
+                self.model = self.model.to(device)
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x.cuda(), 
+                        edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+            else: 
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x, 
+                        edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+
             # Construct the k-hop subgraph of the node of interest (v)
             self.neighbours, _, _, edge_mask =\
                 torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
@@ -149,21 +164,6 @@ class GraphSHAP():
             # Compute |z'| for each sample z': number of non-zero entries
             s = (z_ != 0).sum(dim=1)
 
-            # Compute true prediction of model, for original instance
-            if self.gpu: 
-                device = torch.device(
-                    'cuda' if torch.cuda.is_available() else 'cpu')
-                self.model = self.model.to(device)
-                with torch.no_grad():
-                    true_conf, true_pred = self.model(
-                        x=self.data.x.cuda(), 
-                        edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
-            else: 
-                with torch.no_grad():
-                    true_conf, true_pred = self.model(
-                        x=self.data.x, 
-                        edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
-
             ### GRAPHSHAP KERNEL: define weights associated with each sample 
             weights = self.shapley_kernel(s)
             # TODO: remove when tests are finished
@@ -216,13 +216,14 @@ class GraphSHAP():
         """ Coalition sampling that favour neighbours or features 
 
         """
-        if not regu:
+        if regu=='None':
             z_ = self.Smarter(num_samples, args_K, regu) 
             return z_
 
         # Favour features - special coalitions don't study node's effect
         elif regu > 0.5:
             # Define empty and full coalitions
+            self.M = self.F
             z_ = torch.ones(num_samples, self.M)
             z_[1::2] = torch.zeros(num_samples//2, self.M)
             # z_[1, :] = torch.empty(1, self.M).random_(2)
@@ -275,11 +276,13 @@ class GraphSHAP():
         # Favour neighbour
         else: 
             # Define empty and full coalitions
+            D = len(self.neighbours)
+            self.M = D
+            self.F = 0 
             z_ = torch.ones(num_samples, self.M)
             z_[1::2] = torch.zeros(num_samples//2, self.M)
             i = 2 
             k = 1
-            D = len(self.neighbours)
             # Loop until all samples are created
             while i < num_samples:
                 # Look at each feat/nei individually if have enough sample
@@ -623,15 +626,20 @@ class GraphSHAP():
                 
                 # Look at the 2-hop neighbours included
                 # Make sure that they are connected to v (with current nodes sampled nodes)
-                included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
-                included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+                included_nei = set(
+                    self.neighbours.detach().numpy()).difference(ex_nei)
+                included_nei = included_nei.difference(
+                    one_hop_neighbours.detach().numpy())
                 
-                for incl_nei in included_nei: 
+                for incl_nei in included_nei:
                     l = nx.shortest_path(G, source=node_index, target=incl_nei)
-                    for n in range(1,len(l)-1):
-                        A = torch.cat((A, torch.tensor(
-                            [[l[n-1]], [l[n]]] )), dim=-1)
-                        X[l[n], :] = av_feat_values
+                    if set(l[1:-1]).isdisjoint(ex_nei):
+                        pass
+                    else:
+                        for n in range(1, len(l)-1):
+                            A = torch.cat((A, torch.tensor(
+                                [[l[n-1]], [l[n]]])), dim=-1)
+                            X[l[n], :] = av_feat_values
 
             # Usual case - exclude features for the whole subgraph
             else:
@@ -735,13 +743,21 @@ class GraphSHAP():
             # Special case - consider only nei. influence if too few feat included
             if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
                 # Look at the 2-hop neighbours included
-                included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
-                included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+                # Make sure that they are connected to v (with current nodes sampled nodes)
+                included_nei = set(
+                    self.neighbours.detach().numpy()).difference(ex_nei)
+                included_nei = included_nei.difference(
+                    one_hop_neighbours.detach().numpy())
+                #if len(self.neighbours) - len(ex_nei) < args_K:
                 for incl_nei in included_nei:
                     l = nx.shortest_path(G, source=node_index, target=incl_nei)
-                    for n in range(1, len(l)-1):
-                        A = torch.cat((A, torch.tensor(
-                            [[l[n-1]], [l[n]]])), dim=-1)
+                    if set(l[1:-1]).isdisjoint(ex_nei):
+                        pass
+                    else:
+                        for n in range(1, len(l)-1):
+                            A = torch.cat((A, torch.tensor(
+                                [[l[n-1]], [l[n]]])), dim=-1)
+                            X[l[n], :] = av_feat_values
                 
             # Apply model on (X,A) as input.
             if self.gpu:
@@ -925,14 +941,21 @@ class GraphSHAP():
             # Special case - consider only nei. influence if too few feat included
             if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):	
                 # Look at the 2-hop neighbours included
-                included_nei = set(self.neighbours.detach().numpy()).difference(ex_nei)
-                included_nei = included_nei.difference(one_hop_neighbours.detach().numpy())
+                # Make sure that they are connected to v (with current nodes sampled nodes)
+                included_nei = set(
+                    self.neighbours.detach().numpy()).difference(ex_nei)
+                included_nei = included_nei.difference(
+                    one_hop_neighbours.detach().numpy())
+                #if len(self.neighbours) - len(ex_nei) < args_K:
                 for incl_nei in included_nei:
                     l = nx.shortest_path(G, source=node_index, target=incl_nei)
-                    for n in range(1, len(l)-1):
-                        A = torch.cat((A, torch.tensor(
-                            [[l[n-1]], [l[n]]])), dim=-1)
-                        X[l[n], :] = av_feat_values
+                    if set(l[1:-1]).isdisjoint(ex_nei):
+                        pass
+                    else:
+                        for n in range(1, len(l)-1):
+                            A = torch.cat((A, torch.tensor(
+                                [[l[n-1]], [l[n]]])), dim=-1)
+                            X[l[n], :] = av_feat_values
 
             # Apply model on (X,A) as input.
             if self.gpu:
@@ -1035,6 +1058,119 @@ class GraphSHAP():
     
         ################################
     
+    def compute_pred_regu(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+        """ Construct z from z' and compute prediction f(z) for each sample z'
+            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+
+        Args: 
+                Variables are defined exactly as defined in explainer function 
+
+        Returns: 
+                (tensor): f(z) - probability of belonging to each target classes, for all samples z
+                Dimension (N * C) where N is num_samples and C num_classses. 
+        """
+        # To networkx
+        G = torch_geometric.utils.to_networkx(self.data)
+
+        # We need to recover z from z' - wrt sampled neighbours and node features
+        # Initialise new node feature vectors and neighbours to disregard
+        if args_feat == 'Null':
+            av_feat_values = torch.zeros(self.data.x.size(1))
+        else:
+            av_feat_values = self.data.x.mean(dim=0)
+
+        # Init label f(z) for graphshap dataset - consider all classes
+        fz = torch.zeros((num_samples, self.data.num_classes))
+
+        ### Look only at nodes
+        if self.M == self.F: 
+            excluded_feat = {}
+
+            for i in range(num_samples):
+                feats_id = []
+                for j in range(self.F):
+                    if z_[i, j].item() == 0:
+                        feats_id.append(feat_idx[j].item())
+                excluded_feat[i] = feats_id
+
+            for key, ex_feat in tqdm(excluded_feat.items()):
+                # Change feature vector for node of interest - excluded and discarded features
+                X = deepcopy(self.data.x) 
+                X[node_index, ex_feat] = av_feat_values[ex_feat]
+                for val in ex_feat:
+                    X[self.neighbours, val] = av_feat_values[val].repeat(D)
+                
+                # Apply model on (X,A) as input.
+                if self.gpu:
+                    with torch.no_grad():
+                        proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+                            node_index]
+                else:
+                    with torch.no_grad():
+                        proba = self.model(x=X, edge_index=self.data.edge_index).exp()[node_index]
+
+                fz[key] = proba
+            
+        ### Look only at neighbours
+        elif self.M == len(self.neighbours):
+            excluded_nei = {}
+
+            for i in range(num_samples):
+                nodes_id = []
+                for j in range(D):
+                    if z_[i, j] == 0:
+                        nodes_id.append(self.neighbours[j].item())
+                # Dico with key = num_sample id, value = excluded neighbour index
+                excluded_nei[i] = nodes_id
+
+            for key, ex_nei in tqdm(excluded_nei.items()):
+                positions = []
+                for val in ex_nei:
+                    pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
+                    positions += pos
+                # Create new adjacency matrix for that sample
+                positions = list(set(positions))
+                A = np.array(self.data.edge_index)
+                A = np.delete(A, positions, axis=1)
+                A = torch.tensor(A)
+                X = deepcopy(self.data.x)
+
+                # Look at the 2-hop neighbours included
+                # Make sure that they are connected to v (with current nodes sampled nodes)
+                included_nei = set(
+                    self.neighbours.detach().numpy()).difference(ex_nei)
+                included_nei = included_nei.difference(
+                    one_hop_neighbours.detach().numpy())
+                #if len(self.neighbours) - len(ex_nei) < args_K:
+                for incl_nei in included_nei:
+                    l = nx.shortest_path(G, source=node_index, target=incl_nei)
+                    if set(l[1:-1]).isdisjoint(ex_nei):
+                        pass
+                    else: 
+                        for n in range(1, len(l)-1):
+                            A = torch.cat((A, torch.tensor(
+                                [[l[n-1]], [l[n]]])), dim=-1)
+                            X[l[n], :] = av_feat_values
+
+                # Apply model on (X,A) as input.
+                if self.gpu:
+                    with torch.no_grad():
+                        proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[
+                            node_index]
+                else:
+                    with torch.no_grad():
+                        proba = self.model(x=X, edge_index=A).exp()[node_index]
+
+                # Store predicted class label in fz
+                fz[key] = proba
+        
+        else: 
+            fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx,
+                         one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
+    
+        return fz
+
+
     ################################
     # LEARN MODEL G
     ################################
