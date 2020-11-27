@@ -607,11 +607,16 @@ class GraphSHAP():
                 A = np.delete(A, positions, axis=1)
             A = torch.tensor(A)
 
-            # Change feature vector for node of interest
+            # Change feature vector for node of interest - excluded and discarded features
             X = deepcopy(self.data.x)
             X[node_index, ex_feat] = av_feat_values[ex_feat]
             if discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
                 X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
+                # May delete - should be an approximation
+                #if args_feat == 'Expectation':
+                #    for val in discarded_feat_idx:
+                #        X[self.neighbours, val] = av_feat_values[val].repeat(D)
+
 
             # Special case - consider only nei. influence if too few feat included
             if self.F - len(ex_feat) < min(self.M - self.F - len(ex_nei), args_K):
