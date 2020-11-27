@@ -67,25 +67,25 @@ def build_arguments():
         model='GAT',
         dataset='Cora',
         seed=10,
-        explainers=['GraphSHAP'],
-        node_explainers=['GraphSHAP','GNNExplainer', 'Greedy'],
-        hops=3,
+        explainers=['GraphSHAP', 'GNNExplainer'],
+        node_explainers=['GraphSHAP','GNNExplainer'],
+        hops=2,
         num_samples=1000,
-        test_samples=5,
+        test_samples=50,
         K=0.15,
-        prop_noise_feat=0.20,
-        prop_noise_nodes=0.20,
+        prop_noise_feat=0.10,
+        prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='compute_pred_regu',
+        hv='compute_pred',
         feat='Expectation',
-        coal='SmarterRegu',
+        coal='Smarter',
         g='WLR_sklearn',
-        regu=0,
+        regu=None,
         info=False,
         gpu=False
     )
-    # args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
+    # args_hv: 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral', 'compute_pred_regu'
     # args_feat: 'All', 'Expectation', 'Null', 'Random'
     # args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu'
     # args_g: 'WLR', WLS, 'WLR_sklearn'

@@ -1362,7 +1362,7 @@ class GraphSHAP():
                   (item[0].item(), item[1].item()) for item in list(influential_feat.items())])
 
         # Most influential features splitted bewteen neighbours and features
-        if D > 5:
+        if D > 5 and self.M!=self.F:
             _, idxs = torch.topk(torch.from_numpy(
                 np.abs(pred_explanation[self.F:])), 3)
             vals = [pred_explanation[self.F + idx] for idx in idxs]
