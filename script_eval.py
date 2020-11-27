@@ -67,12 +67,11 @@ def build_arguments():
         model='GAT',
         dataset='Cora',
         seed=10,
-        explainers=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
-                    'SHAP', 'LIME'],
+        explainers=['GraphSHAP'],
         node_explainers=['GraphSHAP','GNNExplainer', 'Greedy'],
         hops=3,
-        num_samples=1500,
-        test_samples=50,
+        num_samples=1000,
+        test_samples=5,
         K=0.15,
         prop_noise_feat=0.20,
         prop_noise_nodes=0.20,
@@ -86,7 +85,6 @@ def build_arguments():
         info=False,
         gpu=False
     )
-
     # args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
     # args_feat: 'All', 'Expectation', 'Null', 'Random'
     # args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu'
@@ -120,7 +118,7 @@ def main():
             args.regu = 0
 
         # Neighbours
-        
+        """
         filter_useless_nodes(args.model,
                              args.dataset,
                              args.node_explainers,
@@ -139,7 +137,7 @@ def main():
                              args.multiclass,
                              args.regu,
                              args.gpu)
-        
+        """
         # Only study features
         if args.coal == 'SmarterRegu':
             args.regu = 1

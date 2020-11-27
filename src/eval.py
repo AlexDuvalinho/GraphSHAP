@@ -96,7 +96,7 @@ def filter_useless_features(args_model,
     del log_logits
 
     # Adaptable K - top k explanations we look at for each node
-    # Depends on number of existing features/neighbours considered for GraphSHAP
+    # Depends on number of existing features considered for GraphSHAP
     if 'GraphSHAP' in args_explainers:
         K = []
     else:
@@ -142,8 +142,9 @@ def filter_useless_features(args_model,
                 coefs = coefs[0][:explainer.F]
                 
                 # Adaptable K
-                if explainer.F > 50:
-                    K.append(10)
+                if explainer.F > 100:
+                    #K.append(10)
+                     K.append(int(args_K * 100))
                 else:
                     K.append(int(explainer.F * args_K))
 
@@ -181,12 +182,6 @@ def filter_useless_features(args_model,
                                         )[:explainer.F]
                 # All features are considered
                 num_noise_feat_considered = args_num_noise_feat
-
-            # Number of non-zero noisy features is different
-            # for explainers with all features considered vs non-zero features only (shap,graphshap)
-            if explainer.F != data.x.size(1):
-                num_noise_feat_considered = len(
-                    [val for val in noise_feat[node_idx] if val != 0])
 
             # Features considered 
             F.append(explainer.F)
