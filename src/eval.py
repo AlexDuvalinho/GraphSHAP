@@ -231,7 +231,7 @@ def filter_useless_features(args_model,
 
     # Random explainer - plot estimated kernel density
     total_num_noise_feats = noise_feats_for_random(
-        data, model, K, total_num_noise_feat_considered, node_indices)
+        data, model, K, args_num_noise_feat, node_indices)
     save_path = 'results/eval1_feat'
     plot_dist(total_num_noise_feats, label='Random', color='y')
 
@@ -240,12 +240,12 @@ def filter_useless_features(args_model,
     # plt.show()
 
 
-def noise_feats_for_random(data, model, K, total_num_noise_feat_considered, node_indices):
+def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
     """ Random explainer
 
     Args: 
         K: number of most important features we look at 
-        total_num_noise_feat_considered: number of non zero noisy features 
+        args_num_noise_feat: number of noisy features 
         node_indices: indices of test nodes 
     
     Returns:
@@ -257,18 +257,18 @@ def noise_feats_for_random(data, model, K, total_num_noise_feat_considered, node
 
     for j, node_idx in enumerate(node_indices):
 
-        # Look only at non zero features 
-        non_zero_feats = data.x[node_idx].nonzero().T[0].tolist()
+        # Look only at all features 
+        # non_zero_feats = data.x[node_idx].nonzero().T[0].tolist()
 
         # Use Random explainer
-        explainer = Random(len(non_zero_feats), K[j])
+        explainer = Random(len(data.x.size(1)), K[j])
 
         # Store indexes of K most important features, for each class
         feat_indices = explainer.explain()
 
         # Number of noisy features that appear in explanations - use index to spot them
         num_noise_feat = sum(
-            idx < total_num_noise_feat_considered[j] for idx in feat_indices)
+            idx < args_num_noise_feat for idx in feat_indices)
 
         pred_class_num_noise_feats.append(num_noise_feat)
 

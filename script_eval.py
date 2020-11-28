@@ -77,9 +77,9 @@ def build_arguments():
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='compute_pred',
+        hv='compute_pred_regu',
         feat='Expectation',
-        coal='Smarter',
+        coal='SmarterRegu',
         g='WLR_sklearn',
         regu=None,
         info=False,
@@ -118,7 +118,6 @@ def main():
             args.regu = 0
 
         # Neighbours
-        """
         filter_useless_nodes(args.model,
                              args.dataset,
                              args.node_explainers,
@@ -137,7 +136,7 @@ def main():
                              args.multiclass,
                              args.regu,
                              args.gpu)
-        """
+        
         # Only study features
         if args.coal == 'SmarterRegu':
             args.regu = 1
@@ -182,7 +181,6 @@ def main():
                                           args.gpu)
 
         # Node features
-        """
         filter_useless_features_multiclass(args.model,
                                            args.dataset,
                                            args.explainers,
@@ -200,7 +198,7 @@ def main():
                                            args.multiclass,
                                            args.regu,
                                            args.gpu)
-        """
+
     end_time = time.time()
     print('Time: ', end_time - start_time)
 
