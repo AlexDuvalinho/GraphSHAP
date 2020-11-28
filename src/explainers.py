@@ -664,7 +664,7 @@ class GraphSHAP():
 
         return fz
 
-    def basic_default_2hop(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def basic_default_2hop(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -709,10 +709,10 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
-        # Init final predicted class for each sample (informative)
-        classes_labels = torch.zeros(num_samples)
-        pred_confidence = torch.zeros(num_samples)
+        if multiclass:
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else:
+            fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
@@ -767,17 +767,15 @@ class GraphSHAP():
                 with torch.no_grad():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
-            # Store final class prediction and confience level
-            pred_confidence[key], classes_labels[key] = torch.topk(
-                proba, k=1)  # optional
-            # NOTE: maybe only consider predicted class for explanations
-
             # Store predicted class label in fz
-            fz[key] = proba
+            if multiclass:
+                fz[key] = proba
+            else:
+                fz[key] = proba[true_pred]
 
         return fz
 
-    def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -818,10 +816,10 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
-        # Init final predicted class for each sample (informative)
-        classes_labels = torch.zeros(num_samples)
-        pred_confidence = torch.zeros(num_samples)
+        if multiclass:
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else:
+            fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
@@ -856,17 +854,15 @@ class GraphSHAP():
                 with torch.no_grad():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
-            # Store final class prediction and confience level
-            pred_confidence[key], classes_labels[key] = torch.topk(
-                proba, k=1)  # optional
-            # NOTE: maybe only consider predicted class for explanations
-
             # Store predicted class label in fz
-            fz[key] = proba
+            if multiclass:
+                fz[key] = proba
+            else: 
+                fz[key] = proba[true_pred]
 
         return fz
 
-    def node_specific(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def node_specific(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -911,10 +907,10 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
-        # Init final predicted class for each sample (informative)
-        classes_labels = torch.zeros(num_samples)
-        pred_confidence = torch.zeros(num_samples)
+        if multiclass:
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else:
+            fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat)  in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
@@ -965,17 +961,15 @@ class GraphSHAP():
                 with torch.no_grad():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
-            # Store final class prediction and confience level
-            pred_confidence[key], classes_labels[key] = torch.topk(
-                proba, k=1)  # optional
-            # NOTE: maybe only consider predicted class for explanations
-
             # Store predicted class label in fz
-            fz[key] = proba
+            if multiclass:
+                fz[key] = proba
+            else:
+                fz[key] = proba[true_pred]
 
         return fz
 
-    def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -1018,10 +1012,10 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
-        # Init final predicted class for each sample (informative)
-        classes_labels = torch.zeros(num_samples)
-        pred_confidence = torch.zeros(num_samples)
+        if multiclass: 
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else: 
+            fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
@@ -1046,19 +1040,17 @@ class GraphSHAP():
                 with torch.no_grad():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
-            # Store final class prediction and confience level
-            pred_confidence[key], classes_labels[key] = torch.topk(
-                proba, k=1)  # optional
-            # NOTE: maybe only consider predicted class for explanations
-
             # Store predicted class label in fz
-            fz[key] = proba
+            if multiclass:
+                fz[key] = proba
+            else: 
+                fz[key] = proba[true_pred]
 
         return fz
     
         ################################
     
-    def compute_pred_regu(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def compute_pred_regu(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -1080,7 +1072,10 @@ class GraphSHAP():
             av_feat_values = self.data.x.mean(dim=0)
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
+        if multiclass:
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else:
+            fz = torch.zeros(num_samples)
 
         ### Look only at nodes
         if self.M == self.F: 
@@ -1109,7 +1104,11 @@ class GraphSHAP():
                     with torch.no_grad():
                         proba = self.model(x=X, edge_index=self.data.edge_index).exp()[node_index]
 
+            # Store predicted class label in fz
+            if multiclass:
                 fz[key] = proba
+            else: 
+                fz[key] = proba[true_pred]
             
         ### Look only at neighbours
         elif self.M == len(self.neighbours):

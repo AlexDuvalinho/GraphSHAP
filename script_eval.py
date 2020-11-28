@@ -77,7 +77,7 @@ def build_arguments():
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='compute_pred',
+        hv='node_specific',
         feat='Expectation',
         coal='Smarter',
         g='WLR_sklearn',
