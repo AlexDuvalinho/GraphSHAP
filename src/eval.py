@@ -5,6 +5,7 @@
     Check how frequently they appear in explanations
 """
 
+from datetime import datetime
 import torch
 import warnings
 from tqdm import tqdm
@@ -235,7 +236,11 @@ def filter_useless_features(args_model,
     save_path = 'results/eval1_feat'
     plot_dist(total_num_noise_feats, label='Random', color='y')
 
-    plt.savefig('results/eval1_feat_{}'.format(data.name))
+    # Store graph - with key params and time
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    plt.savefig('results/eval1_feat_{}_{}_{}_{}_{}'.format(data.name,
+                                                           args_hv, args_coal, args_feat, current_time))
     plt.close()
     # plt.show()
 
@@ -261,7 +266,7 @@ def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
         # non_zero_feats = data.x[node_idx].nonzero().T[0].tolist()
 
         # Use Random explainer
-        explainer = Random(len(data.x.size(1)), K[j])
+        explainer = Random(data.x.size(1), K[j])
 
         # Store indexes of K most important features, for each class
         feat_indices = explainer.explain()
@@ -455,8 +460,11 @@ def filter_useless_nodes(args_model,
         data, model, K, node_indices, total_num_noisy_nei, total_neigbours)
     plot_dist(total_num_noise_neis, label='Random',
               color='y')
-
-    plt.savefig('results/eval1_node_{}'.format(data.name))
+    
+    # Store graph - with key params and time
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    plt.savefig('results/eval1_node_{}_{}_{}_{}_{}'.format(data.name, args_hv, args_coal, args_feat, current_time))
     plt.close()
     #plt.show()
 

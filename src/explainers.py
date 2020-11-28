@@ -173,11 +173,8 @@ class GraphSHAP():
             ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
             # Retrive z from z' and x_v, then compute f(z)
             fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-                                feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
-            
-            #### MULTICLASS / Predicted class only
-            if not multiclass: 
-                fz = fz[:, true_pred]
+                                feat_idx, one_hop_neighbours, args_K, args_feat, 
+                                discarded_feat_idx, multiclass, true_pred)
             
             ### g: Weighted Linear Regression to learn shapley values
             phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass, info)		
@@ -541,7 +538,7 @@ class GraphSHAP():
     ################################
     # COMPUTE PREDICTIONS f(z)
     ################################
-    def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx):
+    def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
 
@@ -588,10 +585,12 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        fz = torch.zeros((num_samples, self.data.num_classes))
-        # Init final predicted class for each sample (informative)
-        classes_labels = torch.zeros(num_samples)
-        pred_confidence = torch.zeros(num_samples)
+        if multiclass: 
+            fz = torch.zeros((num_samples, self.data.num_classes))
+        else: 
+            fz = torch.zeros(num_samples)
+        # classes_labels = torch.zeros(num_samples)
+        # pred_confidence = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat)  in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
@@ -655,12 +654,13 @@ class GraphSHAP():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
             # Store final class prediction and confience level
-            pred_confidence[key], classes_labels[key] = torch.topk(
-                proba, k=1)  # optional
-            # NOTE: maybe only consider predicted class for explanations
+            # pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1) 
 
             # Store predicted class label in fz
-            fz[key] = proba
+            if multiclass:
+                fz[key] = proba
+            else: 
+                fz[key] = proba[true_pred]
 
         return fz
 
