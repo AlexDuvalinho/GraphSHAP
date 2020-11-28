@@ -70,20 +70,20 @@ def build_arguments():
         explainers=['GraphSHAP', 'GNNExplainer'],
         node_explainers=['GraphSHAP','GNNExplainer'],
         hops=2,
-        num_samples=100,
-        test_samples=5,
-        K=0.15,
+        num_samples=1000,
+        test_samples=10,
+        K=0.2,
         prop_noise_feat=0.10,
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='node_specific',
+        hv='compute_pred',
         feat='Expectation',
         coal='Smarter',
         g='WLR_sklearn',
         regu=None,
         info=False,
-        gpu=False
+        gpu=True
     )
     # args_hv: 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral', 'compute_pred_regu'
     # args_feat: 'All', 'Expectation', 'Null', 'Random'
