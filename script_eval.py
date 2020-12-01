@@ -68,7 +68,7 @@ def build_arguments():
         model='GAT',
         dataset='Cora',
         seed=10,
-        explainers=['GraphSHAP', 'GNNExplainer'],
+        explainers=['GraphSHAP','GraphLIME'],
         node_explainers=['GraphSHAP','GNNExplainer'],
         hops=2,
         num_samples=1000,
@@ -113,6 +113,7 @@ def main():
     start_time = time.time()
 
     # List specific sets of hyperparameters values
+    node_indices = [2549,2664,2250,1881,2467,2663,1830,1938,1719,1828] #2367,2127,1899,2652,2100,2125
     args_num_samples = [1000, 3000, 5000]
     args_model = ['GCN', 'GAT']
     args_seed = [0, 10, 100]
@@ -124,13 +125,12 @@ def main():
     args_regu: ['None', 0, 1]
 
     # Create combinations of above hyperparameters 
-    l = [args_model, args_num_samples, args_seed]
+    l = [args_hv, args_coal, args_feat]
     flat_list = list(product(*l))
     
-    for (args.model, args.num_samples, args.seed) in flat_list:
+    for (args.hv, args.coal, args.feat) in flat_list:
     
-    # For only one hyperparam
-    # for args.hv in args_hv: 
+    #for args.seed in args_seed: 
     
         if args.multiclass == False:
 

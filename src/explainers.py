@@ -2105,6 +2105,7 @@ class GNNExplainer():
 
             if info == True:
                 self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
+            del explainer
 
             return node_feat_mask
 
