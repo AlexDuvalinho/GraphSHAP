@@ -71,7 +71,7 @@ def build_arguments():
         explainers=['GraphSHAP','GraphLIME'],
         node_explainers=['GraphSHAP','GNNExplainer'],
         hops=2,
-        num_samples=1000,
+        num_samples=10,
         test_samples=10,
         K=0.2,
         prop_noise_feat=0.10,
@@ -112,118 +112,122 @@ def main():
     
     start_time = time.time()
 
-    # List specific sets of hyperparameters values
-    node_indices = [2549,2664,2250,1881,2467,2663,1830,1938,1719,1828] #2367,2127,1899,2652,2100,2125
-    args_num_samples = [1000, 3000, 5000]
-    args_model = ['GCN', 'GAT']
-    args_seed = [0, 10, 100]
-    args_dataset = ['Cora', 'PubMed', 'Amazon']
-    args_hv = ['compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral']
-    args_feat = ['All', 'Expectation', 'Null']
-    args_coal = ['Smarter', 'Smart', 'SmarterPlus', 'SmarterRegu']
-    args_g = ['WLR', 'WLS', 'WLR_sklearn']
-    args_regu: ['None', 0, 1]
+    ## List specific sets of hyperparameters values
+    # node_indices = [2549,2664,2250,1881,2467,2663,1830,1938,1719,1828] #2367,2127,1899,2652,2100,2125
+    # args_num_samples = [1000, 3000, 5000]
+    # args_model = ['GCN', 'GAT']
+    # args_seed = [0, 10, 100]
+    # args_dataset = ['Cora', 'PubMed', 'Amazon']
+    # args_hv = ['compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral']
+    # args_feat = ['All', 'Expectation', 'Null']
+    # args_coal = ['Smarter', 'Smart', 'SmarterPlus', 'SmarterRegu']
+    # args_g = ['WLR', 'WLS', 'WLR_sklearn']
+    # args_regu= ['None', 0, 1]
+    # args_K = [0.1,0.2,0.05]
+    # args_prop_noise_nodes = [0.1, 0.2, 0.05]
+    # args_prop_noise_feat = [0.1, 0.2, 0.05]
 
     # Create combinations of above hyperparameters 
-    l = [args_hv, args_coal, args_feat]
-    flat_list = list(product(*l))
+    # l = [args_K, args_prop_noise_nodes]
+    # flat_list = list(product(*l))
     
-    for (args.hv, args.coal, args.feat) in flat_list:
+    # for (args.K, args.prop_noise_nodes) in flat_list:
+    #     args.prop_noise_feat = args_prop_noise_nodes
     
     #for args.seed in args_seed: 
-    
-        if args.multiclass == False:
 
-            # Only study neighbours 
-            if args.coal == 'SmarterRegu':
-                args.hv == 'compute_pred_regu'
-                args.regu = 0
+    if args.multiclass == False:
 
-            # Neighbours
-            filter_useless_nodes(args.model,
+        # Only study neighbours 
+        if args.coal == 'SmarterRegu':
+            args.hv == 'compute_pred_regu'
+            args.regu = 0
+
+        # Neighbours
+        filter_useless_nodes(args.model,
+                            args.dataset,
+                            args.node_explainers,
+                            args.hops,
+                            args.num_samples,
+                            args.test_samples,
+                            args.K,
+                            args.prop_noise_nodes,
+                            args.connectedness,
+                            node_indices,
+                            args.info,
+                            args.hv, #node_specific
+                            args.feat,
+                            args.coal,
+                            args.g,
+                            args.multiclass,
+                            args.regu,
+                            args.gpu)
+        
+        # Only study features
+        if args.coal == 'SmarterRegu':
+            args.hv == 'compute_pred_regu'
+            args.regu = 1
+
+        # Features
+        filter_useless_features(args.model,
                                 args.dataset,
-                                args.node_explainers,
+                                args.explainers,
                                 args.hops,
                                 args.num_samples,
                                 args.test_samples,
                                 args.K,
-                                args.prop_noise_nodes,
-                                args.connectedness,
+                                args.prop_noise_feat,
                                 node_indices,
                                 args.info,
-                                args.hv, #node_specific
+                                args.hv,
                                 args.feat,
                                 args.coal,
                                 args.g,
                                 args.multiclass,
                                 args.regu,
                                 args.gpu)
-            
-            # Only study features
-            if args.coal == 'SmarterRegu':
-                args.hv == 'compute_pred_regu'
-                args.regu = 1
+    else:
+        # Neighbours
+        filter_useless_nodes_multiclass(args.model,
+                                        args.dataset,
+                                        args.node_explainers,
+                                        args.hops,
+                                        args.num_samples,
+                                        args.test_samples,
+                                        args.prop_noise_nodes,
+                                        args.connectedness,
+                                        node_indices,
+                                        5,
+                                        args.info,
+                                        args.hv,
+                                        args.feat,
+                                        args.coal,
+                                        args.g,
+                                        args.multiclass,
+                                        args.regu,
+                                        args.gpu)
 
-            # Features
-            filter_useless_features(args.model,
-                                    args.dataset,
-                                    args.explainers,
-                                    args.hops,
-                                    args.num_samples,
-                                    args.test_samples,
-                                    args.K,
-                                    args.prop_noise_feat,
-                                    node_indices,
-                                    args.info,
-                                    args.hv,
-                                    args.feat,
-                                    args.coal,
-                                    args.g,
-                                    args.multiclass,
-                                    args.regu,
-                                    args.gpu)
-        else:
-            # Neighbours
-            filter_useless_nodes_multiclass(args.model,
-                                            args.dataset,
-                                            args.node_explainers,
-                                            args.hops,
-                                            args.num_samples,
-                                            args.test_samples,
-                                            args.prop_noise_nodes,
-                                            args.connectedness,
-                                            node_indices,
-                                            5,
-                                            args.info,
-                                            args.hv,
-                                            args.feat,
-                                            args.coal,
-                                            args.g,
-                                            args.multiclass,
-                                            args.regu,
-                                            args.gpu)
+        # Node features
+        filter_useless_features_multiclass(args.model,
+                                        args.dataset,
+                                        args.explainers,
+                                        args.hops,
+                                        args.num_samples,
+                                        args.test_samples,
+                                        args.prop_noise_feat,
+                                        node_indices,
+                                        5,
+                                        args.info,
+                                        args.hv,
+                                        args.feat,
+                                        args.coal,
+                                        args.g,
+                                        args.multiclass,
+                                        args.regu,
+                                        args.gpu)
 
-            # Node features
-            filter_useless_features_multiclass(args.model,
-                                            args.dataset,
-                                            args.explainers,
-                                            args.hops,
-                                            args.num_samples,
-                                            args.test_samples,
-                                            args.prop_noise_feat,
-                                            node_indices,
-                                            5,
-                                            args.info,
-                                            args.hv,
-                                            args.feat,
-                                            args.coal,
-                                            args.g,
-                                            args.multiclass,
-                                            args.regu,
-                                            args.gpu)
-
-        end_time = time.time()
-        print('Time: ', end_time - start_time)
+    end_time = time.time()
+    print('Time: ', end_time - start_time)
 
 if __name__ == "__main__":
     main()
