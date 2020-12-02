@@ -183,7 +183,7 @@ class GraphSHAP():
 
             ### REGU
             if type(regu)==int and not multiclass: 
-                expl = np.array(true_conf - base_value)
+                expl = np.array(true_conf.cpu() - base_value)
                 phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
                 phi[self.F:] = ((1-regu) * expl / sum(phi[self.F:]) ) * phi[self.F:]
 
@@ -1161,7 +1161,10 @@ class GraphSHAP():
                         proba = self.model(x=X, edge_index=A).exp()[node_index]
 
                 # Store predicted class label in fz
-                fz[key] = proba
+                if multiclass:
+                    fz[key] = proba
+                else: 
+                    fz[key] = proba[true_pred]
         
         else: 
             fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx,
