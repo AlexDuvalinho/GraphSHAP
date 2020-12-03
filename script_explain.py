@@ -15,7 +15,6 @@ warnings.filterwarnings("ignore")
 def build_arguments():
 
     # Argument parser
-    # use if __name__=='main': and place the rest in a function that you call
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str,
                         help="Name of the GNN: GCN or GAT")
@@ -92,7 +91,6 @@ def main():
     # Load the model
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
     model = torch.load(model_path)
-    # model.eval()
 
     # Evaluate the model - test set
     model.eval()
@@ -100,7 +98,7 @@ def main():
         log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
     test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
     print('Test accuracy is {:.4f}'.format(test_acc))
-    del log_logits
+    del log_logits, model_path, test_acc
 
     # Explain it with GraphSHAP
     explainer = eval(args.explainer)(data, model, args.gpu)

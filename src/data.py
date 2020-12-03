@@ -2,8 +2,6 @@
 
 	Import and process relevant datasets 
 """
-
-from src.train import train_and_val
 from torch_geometric.datasets import PPI, Amazon, Planetoid, Reddit
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
