@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv, GCNConv
 
-
 class GCN(nn.Module):
     """
     Construct a GNN with several Graph Convolution blocks
@@ -87,8 +86,8 @@ class LinearRegressionModel(nn.Module):
 
     def __init__(self, input_dim, output_dim):
         super(LinearRegressionModel, self).__init__()
-        self.linear = nn.Linear(input_dim, output_dim)
+        self.linear1 = nn.Linear(input_dim, output_dim)
 
     def forward(self, x):
-        y_pred = self.linear(x)
+        y_pred =self.linear1(x)
         return y_pred

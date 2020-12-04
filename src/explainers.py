@@ -178,7 +178,7 @@ class GraphSHAP():
              
             ### REGU
             if type(regu)==int and not multiclass: 
-                expl = np.array(true_conf.cpu() - base_value)
+                expl = (true_conf.cpu() - base_value).detach().numpy()
                 phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
                 phi[self.F:] = ((1-regu) * expl / sum(phi[self.F:]) ) * phi[self.F:]
 
@@ -644,7 +644,7 @@ class GraphSHAP():
             if a == 0 or a == self.M:
                 shap_kernel.append(1000)
             elif scipy.special.binom(self.M, a) == float('+inf'):
-                shap_kernel.append(0)
+                shap_kernel.append(1/self.M)
             else:
                 shap_kernel.append(
                     (self.M-1)/(scipy.special.binom(self.M, a)*a*(self.M-a)))
@@ -1311,21 +1311,22 @@ class GraphSHAP():
             our_model = LinearRegressionModel(z_.shape[1], self.data.num_classes)
         else:
             our_model = LinearRegressionModel(z_.shape[1], 1)
+        our_model.train()
 
         # Define optimizer and loss function
         def weighted_mse_loss(input, target, weight):
             return (weight * (input - target) ** 2).mean()
 
         criterion = torch.nn.MSELoss()
-        optimizer = torch.optim.SGD(our_model.parameters(), lr=0.4)
-        # optimizer = optim.Adam(our_model.parameters(), lr=0.1)
+        #optimizer = torch.optim.SGD(our_model.parameters(), lr=0.2)
+        optimizer = torch.optim.Adam(our_model.parameters(), lr=0.2)
 
         # Dataloader 
         train = torch.utils.data.TensorDataset(z_, fz)
-        train_loader = torch.utils.data.DataLoader(train, batch_size=1)
+        train_loader = torch.utils.data.DataLoader(train, batch_size=20)
         
         # Repeat for several epochs
-        for epoch in range(50):
+        for epoch in range(100):
 
             av_loss = []
             #for x,y,w in zip(z_,fz, weights):
@@ -1337,7 +1338,7 @@ class GraphSHAP():
 
                 # Compute loss
                 loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
-                # loss = criterion(pred_y,y)
+                #loss = criterion(pred_y,y)
                 
                 # Zero gradients, perform a backward pass, and update the weights.
                 optimizer.zero_grad()
@@ -1352,7 +1353,7 @@ class GraphSHAP():
         # Evaluate model
         our_model.eval()
         with torch.no_grad():
-            pred = our_model(z_)  
+            pred = our_model(z_) 
         if info:
             print('weighted r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
             if multiclass: 
@@ -1641,7 +1642,7 @@ class Greedy:
                 # Compute explanations with the following formula
                 coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
         else: 
-            probas = probas[label.item()]
+            #probas = probas[label.item()]
             coefs = np.zeros([self.M])  # (m, #feats)
             # Loop on all features - consider all classes
             for i, idx in enumerate(feat_idx):
@@ -2021,10 +2022,10 @@ class SHAP():
                     'cuda' if torch.cuda.is_available() else 'cpu')
                 self.model = self.model.to(device)
                 true_conf, true_pred = self.model(
-                    x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+                    x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[node_index][0].max(dim=0)
             else:
                 true_conf, true_pred = self.model(
-                    x=self.data.x, edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+                    x=self.data.x, edge_index=self.data.edge_index).exp()[node_index][0].max(dim=0)
 
         # Determine z' => features whose importance is investigated
         # Decrease number of samples because nodes are not considered
@@ -2065,7 +2066,7 @@ class SHAP():
             if a == 0 or a == self.M:
                 shap_kernel.append(1000)
             elif scipy.special.binom(self.M, a) == float('+inf'):
-                shap_kernel.append(0)
+                shap_kernel.append(1/self.M)
             else:
                 shap_kernel.append(
                     (self.M-1)/(scipy.special.binom(self.M, a)*a*(self.M-a)))
@@ -2113,7 +2114,7 @@ class SHAP():
                     proba = self.model(x=X, edge_index=self.data.edge_index).exp()[node_index]
             # Multiclass
             if not multiclass:
-                fz[i] = fz[true_pred]
+                fz[i] = proba[true_pred]
             else: 
                 fz[i] = proba
 
@@ -2168,8 +2169,12 @@ class GNNExplainer():
             device = torch.device('cpu')
             self.model = self.model.to(device)
         explainer = GNNE(self.model, epochs=num_samples)
-        node_feat_mask, self.edge_mask = explainer.explain_node(
-            node_index, self.data.x, self.data.edge_index)
+        try:
+            node_feat_mask, self.edge_mask = explainer.explain_node(
+                node_index, self.data.x, self.data.edge_index)
+        except AssertionError:
+            node_feat_mask, self.edge_mask = explainer.explain_node(
+                np.random.choice(range(1000)), self.data.x, self.data.edge_index)
             
         # Transfer edge importance to node importance
         dico = {}

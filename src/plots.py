@@ -21,7 +21,7 @@ def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_pa
     for a certain number of test samples
     """
     if not any(noise_feats):  # handle special case where noise_feats=0
-        noise_feats[0] = 0.5
+        noise_feats[0] = 0.25
 
     # plt.switch_backend("agg")
     sns.set_style('darkgrid')

@@ -233,7 +233,8 @@ def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, con
 				adj_matrix[i, idx] = 1
 			except IndexError:  # in case num_noise < test_samples
 				pass
-	else:
+	# low connectivity
+	else: 
 		adj_matrix = torch.zeros((num_noise, new_num_nodes))
 		for i, idx in enumerate(node_indices):
 			try:
@@ -269,7 +270,7 @@ def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, con
 	return data
 
 
-def extract_test_nodes(data, num_samples):
+def extract_test_nodes(data, num_samples, seed):
 	"""Select some test samples - without repetition
 
 	Args:
@@ -278,6 +279,7 @@ def extract_test_nodes(data, num_samples):
 	Returns:
 		[list]: list of indexes representing nodes used as test samples
 	"""
+	np.random.seed(seed)
 	test_indices = data.test_mask.cpu().numpy().nonzero()[0]
 	node_indices = np.random.choice(test_indices, num_samples, replace=False).tolist()
 

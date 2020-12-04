@@ -29,8 +29,9 @@ from src.utils import *
 ###############################################################################
 
 
-def filter_useless_features_multiclass(args_model,
-                                       args_dataset,
+def filter_useless_features_multiclass(seed,
+									   args_model,
+									   args_dataset,
                                        args_explainers,
                                        args_hops,
                                        args_num_samples,
@@ -79,7 +80,7 @@ def filter_useless_features_multiclass(args_model,
 
 	# Select random subset of nodes to eval the explainer on.
 	if not node_indices:
-		node_indices = extract_test_nodes(data, args_test_samples)
+		node_indices = extract_test_nodes(data, args_test_samples, seed)
 
 	# Evaluate the model - test set
 	model.eval()
@@ -267,7 +268,8 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 ###############################################################################
 
 
-def filter_useless_nodes_multiclass(args_model,
+def filter_useless_nodes_multiclass(seed,
+									args_model,
 									args_dataset,
 									args_explainers,
 									args_hops,
@@ -302,7 +304,7 @@ def filter_useless_nodes_multiclass(args_model,
 
 	# Select a random subset of nodes to eval the explainer on.
 	if not node_indices:
-		node_indices = extract_test_nodes(data, args_test_samples)
+		node_indices = extract_test_nodes(data, args_test_samples, seed)
 
 	# Add noisy neighbours to the graph, with random features
 	data = add_noise_neighbours(data, args_num_noise_nodes, node_indices,

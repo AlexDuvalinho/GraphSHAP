@@ -30,7 +30,8 @@ from src.utils import *
 ###############################################################################
 
 
-def filter_useless_features(args_model,
+def filter_useless_features(seed,
+                            args_model,
                             args_dataset,
                             args_explainers,
                             args_hops,
@@ -56,7 +57,7 @@ def filter_useless_features(args_model,
     """
 
     # Define dataset 
-    data = prepare_data(args_dataset, seed=10)
+    data = prepare_data(args_dataset, seed)
     args_num_noise_feat = int(data.x.size(1) * args_prop_noise_feat)
     args_p = eval('EVAL1_' + data.name)['args_p']
     args_binary = eval('EVAL1_' + data.name)['args_binary']
@@ -82,7 +83,7 @@ def filter_useless_features(args_model,
 
     # Select random subset of nodes to eval the explainer on.
     if not node_indices:
-        node_indices = extract_test_nodes(data, args_test_samples)
+        node_indices = extract_test_nodes(data, args_test_samples, seed)
     
     # Evaluate the model on test set
     model.eval()
@@ -265,9 +266,6 @@ def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
 
     for j, node_idx in enumerate(node_indices):
 
-        # Look only at all features 
-        # non_zero_feats = data.x[node_idx].nonzero().T[0].tolist()
-
         # Use Random explainer
         explainer = Random(data.x.size(1), K[j])
 
@@ -284,7 +282,8 @@ def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
 
 
 ###############################################################################
-def filter_useless_nodes(args_model,
+def filter_useless_nodes(seed,
+                         args_model,
                          args_dataset,
                          args_explainers,
                          args_hops,
@@ -311,11 +310,11 @@ def filter_useless_nodes(args_model,
     """
 
     # Define dataset
-    data = prepare_data(args_dataset, seed=10)
+    data = prepare_data(args_dataset, seed)
 
     # Select a random subset of nodes to eval the explainer on.
     if not node_indices:
-        node_indices = extract_test_nodes(data, args_test_samples)
+        node_indices = extract_test_nodes(data, args_test_samples, seed)
     
     # Define number of noisy nodes according to dataset size
     args_num_noise_nodes = int(args_prop_noise_nodes * data.x.size(0))
@@ -414,7 +413,10 @@ def filter_useless_nodes(args_model,
             total_neigbours.append(len(explainer.neighbours))
 
             # Adaptable K - vary according to number of nodes in the subgraph
-            K.append(int(args_K * len(explainer.neighbours)))
+            if len(explainer.neighbours) > 100:
+                K.append(int(args_K * 100))
+            else:
+                K.append(int(args_K * len(explainer.neighbours)))
 
             # Store indexes of K most important features, for each class
             nei_indices = np.abs(coefs).argsort()[-K[j]:].tolist()
@@ -547,7 +549,8 @@ def study_attention_weights(data, model, args_test_samples):
 ############################################################################
 
 
-def eval_shap(args_dataset,
+def eval_shap(seed,
+              args_dataset,
               args_model,
               args_test_samples,
               args_hops,
@@ -572,7 +575,7 @@ def eval_shap(args_dataset,
 
     # Select a random subset of nodes to eval the explainer on.
     if not node_indices:
-        node_indices = extract_test_nodes(data, args_test_samples)
+        node_indices = extract_test_nodes(data, args_test_samples, seed)
 
     # Define training parameters depending on (model-dataset) couple
     hyperparam = ''.join(['hparams_', args_dataset, '_', args_model])
@@ -601,46 +604,40 @@ def eval_shap(args_dataset,
         shap = SHAP(data, model, args_gpu)
 
         # Explanations via GraphSHAP
-        graphshap_coefs = graphshap.explain(node_index=node_idx,
-                                            hops=args_hops,
-                                            num_samples=args_num_samples,
-                                            info=False)
-        coefs = graphshap.explain(
-                            [node_idx],
-                            args_hops,
-                            args_num_samples,
-                            info,
-                            args_hv,
-                            args_feat,
-                            args_coal,
-                            args_g,
-                            False,
-                            args_regu
-                            )
+        graphshap_coefs = graphshap.explain([node_idx],
+                                  args_hops,
+                                  args_num_samples,
+                                  info,
+                                  args_multiclass,
+                                  args_hv,
+                                  args_feat, # All
+                                  args_coal, # Random or SmarerSoftRegu
+                                  args_g, #  WLS
+                                  args_regu) # 1
+        graphshap_coefs = graphshap_coefs[0].T[:graphshap.F]
 
-        shap_coefs = shap.explain(node_index=node_idx,
-                                  hops=args_hops,
-                                  num_samples=args_num_samples,
-                                  info=False)
+        shap_coefs = shap.explain(node_idx,
+                                  args_hops,
+                                  args_num_samples,
+                                  info=False,
+                                  multiclass=False
+                                  )[:shap.F]
 
         # Consider node features only - for predicted class only
         true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[
             node_idx].max(dim=0)
-        graphshap_coefs = graphshap_coefs[0][:graphshap.F]
-        shap_coefs = shap_coefs[:, predicted_class]
 
         # Need to apply regularisation
 
         # Proportional contribution
-        prop_contrib_diff.append(np.abs(graphshap_coefs.sum(
+        prop_contrib_diff.append(np.abs( graphshap_coefs.sum(
         ) / np.abs(graphshap_coefs).sum() - shap_coefs.sum() / np.abs(shap_coefs).sum()))
         #print('GraphSHAP proportional contribution to pred: {:.2f}'.format(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() ))
         #print('SHAP proportional contribution to pred: {:.2f}'.format(shap_coefs.sum() / np.abs(shap_coefs).sum() ))
 
         # Important features
-        graphshap_feat_indices = np.abs(
-            graphshap_coefs).argsort()[-args_K:].tolist()
-        shap_feat_indices = np.abs(shap_coefs).argsort()[-args_K:].tolist()
+        graphshap_feat_indices = np.abs(graphshap_coefs).argsort()[-10:].tolist()
+        shap_feat_indices = np.abs(shap_coefs).argsort()[-10:].tolist()
         iou.append(len(set(graphshap_feat_indices).intersection(set(shap_feat_indices))
                        ) / len(set(graphshap_feat_indices).union(set(shap_feat_indices))))
         #print('Iou important features: ', iou)
