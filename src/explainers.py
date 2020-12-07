@@ -114,50 +114,43 @@ class GraphSHAP():
                                                             num_hops=1,
                                                             edge_index=self.data.edge_index)
 
-            # Determine z': features and neighbours whose importance is investigated
-            discarded_feat_idx = []
-            # Consider only non-zero entries in the subgraph of v
-            if args_feat == 'Null':
-                feat_idx = self.data.x[self.neighbours, :].mean(axis=0).nonzero()
-                self.F = feat_idx.size()[0]
-
-            # Consider all features (+ use expectation like below)
-            elif args_feat == 'All':
-                self.F = self.data.x[node_index, :].shape[0]
-                feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
-
-            # Consider only features whose aggregated value is different from expected one
-            else: 
-                # Stats dataset
-                std = self.data.x.std(axis=0)
-                mean = self.data.x.mean(axis=0)
-                # Feature intermediate rep
-                mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
-                # Select relevant features only - (E-e,E+e)
-                mean_subgraph = torch.where(mean_subgraph > mean - 0.25*std, mean_subgraph,
-                            torch.ones_like(mean_subgraph)*100)
-                mean_subgraph = torch.where(mean_subgraph < mean + 0.25*std, mean_subgraph,
-                            torch.ones_like(mean_subgraph)*100)
-                feat_idx = (mean_subgraph == 100).nonzero()
-                discarded_feat_idx = (mean_subgraph != 100).nonzero()
-                self.F = feat_idx.shape[0]
-                del mean, mean_subgraph, std
-            
-            # Potentially do a feature selection with Lasso (or otherwise)
-            # Long process
-
-            # Remove node v index from neighbours and store their number in D
-            self.neighbours = self.neighbours[self.neighbours != node_index]
-            D = self.neighbours.shape[0]
-
-            # Total number of features + neighbours considered for node v
-            self.M = self.F+D
-            
-            # Def range of endcases considered 
-            args_K = 2
             
             # Specific case: my new method - rigorous
             if args_hv == 'node_specific':
+
+                # Consider only relevant entries for v only
+                if args_feat == 'Null':
+                    feat_idx = self.data.x[node_index, :].nonzero()
+                    self.F = feat_idx.size()[0]
+                elif args_feat == 'All':
+                    self.F = self.data.x[node_index, :].shape[0]
+                    feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+                else: 
+                    # Stats dataset
+                    std = self.data.x.std(axis=0)
+                    mean = self.data.x.mean(axis=0)
+                    # Feature intermediate rep
+                    mean_subgraph = self.data.x[node_index,:]
+                    # Select relevant features only - (E-e,E+e)
+                    mean_subgraph = torch.where(mean_subgraph > mean - 0.25*std, mean_subgraph,
+                                torch.ones_like(mean_subgraph)*100)
+                    mean_subgraph = torch.where(mean_subgraph < mean + 0.25*std, mean_subgraph,
+                                torch.ones_like(mean_subgraph)*100)
+                    feat_idx = (mean_subgraph == 100).nonzero()
+                    discarded_feat_idx = (mean_subgraph != 100).nonzero()
+                    self.F = feat_idx.shape[0]
+                    del mean, mean_subgraph, std
+                
+                # Remove node v index from neighbours and store their number in D
+                self.neighbours = self.neighbours[self.neighbours != node_index]
+                D = self.neighbours.shape[0]
+
+                # Total number of features + neighbours considered for node v
+                self.M = self.F+D
+                
+                # Def range of endcases considered 
+                args_K = 2
+                
                 weights = torch.zeros(num_samples, dtype=torch.float64)
                 # Features only
                 num = num_samples//2
@@ -174,9 +167,51 @@ class GraphSHAP():
                 z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
                 z_[num:, self.F:] = z_bis
                 del z_bis, s
-            
+
             else:
-            ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
+                # Determine z': features and neighbours whose importance is investigated
+                discarded_feat_idx = []
+                # Consider only non-zero entries in the subgraph of v
+                if args_feat == 'Null':
+                    feat_idx = self.data.x[self.neighbours, :].mean(axis=0).nonzero()
+                    self.F = feat_idx.size()[0]
+
+                # Consider all features (+ use expectation like below)
+                elif args_feat == 'All':
+                    self.F = self.data.x[node_index, :].shape[0]
+                    feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+
+                # Consider only features whose aggregated value is different from expected one
+                else: 
+                    # Stats dataset
+                    std = self.data.x.std(axis=0)
+                    mean = self.data.x.mean(axis=0)
+                    # Feature intermediate rep
+                    mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
+                    # Select relevant features only - (E-e,E+e)
+                    mean_subgraph = torch.where(mean_subgraph > mean - 0.25*std, mean_subgraph,
+                                torch.ones_like(mean_subgraph)*100)
+                    mean_subgraph = torch.where(mean_subgraph < mean + 0.25*std, mean_subgraph,
+                                torch.ones_like(mean_subgraph)*100)
+                    feat_idx = (mean_subgraph == 100).nonzero()
+                    discarded_feat_idx = (mean_subgraph != 100).nonzero()
+                    self.F = feat_idx.shape[0]
+                    del mean, mean_subgraph, std
+                
+                # Potentially do a feature selection with Lasso (or otherwise)
+                # Long process
+
+                # Remove node v index from neighbours and store their number in D
+                self.neighbours = self.neighbours[self.neighbours != node_index]
+                D = self.neighbours.shape[0]
+
+                # Total number of features + neighbours considered for node v
+                self.M = self.F+D
+                
+                # Def range of endcases considered 
+                args_K = 2
+
+                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
                 z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
                 
                 # Compute |z'| for each sample z': number of non-zero entries
@@ -1024,7 +1059,7 @@ class GraphSHAP():
         else:
             av_feat_values = self.data.x.mean(dim=0)
         # or random feature vector made of random value across each col of X
-        
+
         excluded_feat = {}
         excluded_nei = {}
 
@@ -1070,7 +1105,6 @@ class GraphSHAP():
             A = torch.tensor(A)
 
             # Change feature vector for node of interest
-            # NOTE: maybe change values of all nodes for features not inlcuded, not just x_v
             X = deepcopy(self.data.x)
             X[node_index, ex_feat] = av_feat_values[ex_feat]
             if args_feat != 'Null' and discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
