@@ -117,6 +117,7 @@ class GraphSHAP():
             
             # Specific case: my new method - rigorous
             if args_hv == 'node_specific':
+                discarded_feat_idx = []
 
                 # Consider only relevant entries for v only
                 if args_feat == 'Null':

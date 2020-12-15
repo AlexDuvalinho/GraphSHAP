@@ -70,19 +70,19 @@ def build_arguments():
         model='GAT',
         dataset='Cora',
         seed=10,
-        explainers=['GrahSHAP'],
+        explainers=['GraphSHAP'],
         node_explainers=['GraphSHAP'],
         hops=2,
-        num_samples=3000,
-        test_samples=20,
+        num_samples=2000,
+        test_samples=10,
         K=0.10,
         prop_noise_feat=0.10,
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='compute_pred',
-        feat='Expectation',
-        coal='Smarter',
+        hv='node_specific',
+        feat='Null',
+        coal='SmarterRegu',
         g='WLS',
         regu=None,
         info=False,
@@ -146,6 +146,7 @@ def main():
                 args.regu = 0
 
             # Neighbours
+            
             filter_useless_nodes(args.seed,
                                 args.model,
                                 args.dataset,
@@ -189,6 +190,7 @@ def main():
                                     args.multiclass,
                                     args.regu,
                                     args.gpu)
+            
         else:
             # Neighbours
             filter_useless_nodes_multiclass(args.seed,
