@@ -45,32 +45,39 @@ def build_arguments():
                      help='True if want to print info')
     parser.add_argument("--gpu", type=bool,
                      help='True if want to use gpu')
+    parser.add_argument("--fullempty", type=str,
+                        help='True if want to discard full and empty coalitions')
+    parser.add_argument("--S", type=int,
+                        help='Max size of coalitions sampled in priority and treated specifically')
 
     parser.set_defaults(
         model='GCN',
         dataset='Cora',
         seed=10,
         explainer='GraphSHAP',
-        node_indexes=[0,10,20,30,40],
+        node_indexes=[5],
         hops=2,
-        num_samples=500,
-        hv='compute_pred_regu',
+        num_samples=200,
+        fullempty = None, 
+        S=3,
+        hv='compute_pred_subgraph',
         feat='Expectation',
-        coal='SmarterRegu',
-        g='WLR_sklearn',
+        coal='Smart',
+        g='WLS',
         multiclass=False,
-        regu=1,
+        regu=None,
         info=True,
         gpu=False
     )
 
     return parser.parse_args()
 
-# args_hv: compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral'
+# args_hv: compute_pred', 'compute_pred_subgraph', 'basic_default', 'graph_classification', 'neutral'
 # args_feat: 'All', 'Expectation', 'Null', 'Random'
-# args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu'
-# args_g: 'WLR', WLS, 'WLR_sklearn'
+# args_coal: 'Smarter', 'Smart', 'Random', 'All', 'SmarterSeparate', 'SmarterSoftRegu'
+# args_g: 'WLR', WLS, 'WLR_sklearn', 'WLR_Lasso'
 # args_regu: 'None', integer in [0,1] (1 for feat only)
+# args_fullempty = None or True 
 
 def fix_seed(seed):
     random.seed(seed)
@@ -107,11 +114,14 @@ def main():
                                      args.num_samples,
                                      args.info,
                                      args.multiclass,
+                                     args.fullempty,
+                                     args.S,
                                      args.hv,
                                      args.feat,
                                      args.coal,
                                      args.g,
-                                     args.regu)
+                                     args.regu,
+                                     True)
 
     print('number samples: ' ,len(explanations))
     print('dim expl:' , explanations[0].shape)

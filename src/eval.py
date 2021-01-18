@@ -47,7 +47,9 @@ def filter_useless_features(seed,
                             args_g,
                             args_multiclass,
                             args_regu,
-                            args_gpu):
+                            args_gpu,
+                            args_fullempty,
+                            args_S):
     """ Add noisy features to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -133,6 +135,8 @@ def filter_useless_features(seed,
                                 args_num_samples,
                                 info,
                                 args_multiclass,
+                                args_fullempty,
+                                args_S,
                                 args_hv,
                                 args_feat,
                                 args_coal,
@@ -300,7 +304,9 @@ def filter_useless_nodes(seed,
                          args_g,
                          args_multiclass,
                          args_regu,
-                         args_gpu):
+                         args_gpu,
+                         args_fullempty,
+                         args_S):
     """ Add noisy neighbours to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -398,6 +404,8 @@ def filter_useless_nodes(seed,
                                           args_num_samples,
                                           info,
                                           args_multiclass,
+                                          args_fullempty,
+                                          args_S,
                                           args_hv,
                                           args_feat,
                                           args_coal,
@@ -564,7 +572,9 @@ def eval_shap(seed,
               args_g,
               args_multiclass,
               args_regu,
-              args_gpu):
+              args_gpu,
+              args_fullempty,
+              args_S):
     """
     Compares SHAP and GraphSHAP on graph based datasets
     Check if they agree on features'contribution towards prediction for several test samples
@@ -609,6 +619,8 @@ def eval_shap(seed,
                                   args_num_samples,
                                   info,
                                   args_multiclass,
+                                  args_fullempty,
+                                  args_S,
                                   args_hv,
                                   args_feat, # All
                                   args_coal, # Random or SmarerSoftRegu

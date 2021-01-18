@@ -65,6 +65,11 @@ def build_arguments():
                      help='True if want to use gpu')
     parser.add_argument("--evalshap", type=bool,
                         help='True if want to compare GS with SHAP')
+    parser.add_argument("--fullempty", type=str, default=None,
+                        help='True if want to discard full and empty coalitions')
+    parser.add_argument("--S", type=int, default=3,
+                        help='Max size of coalitions sampled in priority and treated specifically')
+
 
     parser.set_defaults(
         model='GAT',
@@ -73,26 +78,28 @@ def build_arguments():
         explainers=['GraphSHAP'],
         node_explainers=['GraphSHAP'],
         hops=2,
-        num_samples=2000,
+        num_samples=200,
         test_samples=10,
         K=0.10,
         prop_noise_feat=0.10,
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
-        hv='node_specific',
+        fullempty=None,
+        S=3,
+        hv='compute_pred',
         feat='Null',
-        coal='SmarterRegu',
+        coal='SmarterSeparate',
         g='WLS',
         regu=None,
         info=False,
         gpu=True,
         evalshap=False
     )
-    # args_hv: 'compute_pred', 'node_specific', 'basic_default', 'basic_default_2hop', 'neutral', 'compute_pred_regu'
+    # args_hv: 'compute_pred', 'compute_pred_subgraph', 'basic_default', 'neutral', 'compute_pred_regu'
     # args_feat: 'All', 'Expectation', 'Null', 'Random'
-    # args_coal: 'Smarter', 'Smart', 'Random', 'SmarterPlus', 'SmarterRegu', 'SmarterSoftRegu
-    # args_g: 'WLR', WLS, 'WLR_sklearn'
+    # args_coal: 'Smarter', 'Smart', 'Random', 'All', 'SmarterSeparate', 'SmarterSoftRegu
+    # args_g: 'WLR', WLS, 'WLR_sklearn', 'WLR_Lasso'
     # args_regu: 'None', integer in [0,1] (1 for feat only)
 
     args = parser.parse_args()
@@ -123,7 +130,7 @@ def main():
     # args_dataset = ['Cora', 'PubMed', 'Amazon']
     # args_hv = ['compute_pred'] #, 'basic_default', 'basic_default_2hop', 'neutral']
     # args_feat = ['All', 'Expectation', 'Null']
-    # args_coal = ['Smarter', 'Smart', 'SmarterPlus', 'SmarterRegu']
+    # args_coal = ['Smarter', 'Smart', 'All', 'SmarterSeparate']
     # args_g = ['WLR', 'WLS', 'WLR_sklearn']
     # args_regu= ['None', 0, 1]
     # args_K = [0.1,0.2,0.05]
@@ -142,8 +149,8 @@ def main():
         if args.multiclass == False:
 
             # Only study neighbours 
-            if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
-                args.regu = 0
+            #if args.coal == 'SmarterSoftRegu':
+                #args.regu = 0
 
             # Neighbours
             
@@ -165,11 +172,13 @@ def main():
                                 args.g,
                                 args.multiclass,
                                 args.regu,
-                                args.gpu)
+                                args.gpu,
+                                args.fullempty,
+                                args.S)
             
             # Only study features
-            if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
-                args.regu = 1
+            #if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
+                #args.regu = 1
 
             # Features
             filter_useless_features(args.seed,
@@ -189,7 +198,9 @@ def main():
                                     args.g,
                                     args.multiclass,
                                     args.regu,
-                                    args.gpu)
+                                    args.gpu,
+                                    args.fullempty,
+                                    args.S)
             
         else:
             # Neighbours
@@ -211,7 +222,9 @@ def main():
                                             args.g,
                                             args.multiclass,
                                             args.regu,
-                                            args.gpu)
+                                            args.gpu,
+                                            args.fullempty,
+                                            args.S)
 
             # Node features
             filter_useless_features_multiclass(args.seed,
@@ -231,7 +244,9 @@ def main():
                                             args.g,
                                             args.multiclass,
                                             args.regu,
-                                            args.gpu)
+                                            args.gpu,
+                                            args.fullempty,
+                                            args.S)
 
         
         if args.evalshap:
@@ -250,7 +265,9 @@ def main():
                       args.g,
                       args.multiclass,
                       args.regu,
-                      args.gpu)
+                      args.gpu,
+                      args.fullempty,
+                      args.S)
 
         end_time = time.time()
         print('Time: ', end_time - start_time)
