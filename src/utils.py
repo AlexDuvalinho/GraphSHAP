@@ -1,7 +1,7 @@
 import torch
 
 # Colours for plots
-COLOURS = ['g', 'b', 'r', 'c', 'm', 'k']
+COLOURS = ['g', 'b', 'r', 'c', 'magenta', 'k']
 
 # Input dimension of different datasets (features)
 INPUT_DIM = {'Cora': 1433,

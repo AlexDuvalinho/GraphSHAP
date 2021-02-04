@@ -74,26 +74,26 @@ def build_arguments():
     parser.set_defaults(
         model='GAT',
         dataset='Cora',
-        seed=10,
-        explainers=['GraphSHAP'],
-        node_explainers=['GraphSHAP'],
+        seed=0,
+        explainers=['GraphSHAP','GNNExplainer', 'GraphLIME', 'LIME', 'SHAP'],
+        node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
         hops=2,
-        num_samples=200,
-        test_samples=10,
+        num_samples=1000,
+        test_samples=20,
         K=0.10,
-        prop_noise_feat=0.10,
+        prop_noise_feat=0.20,
         prop_noise_nodes=0.10,
         connectedness='medium',
         multiclass=False,
         fullempty=None,
         S=3,
-        hv='compute_pred',
+        hv='compute_pred_subgraph',
         feat='Null',
-        coal='SmarterSeparate',
-        g='WLS',
+        coal='Smarter',
+        g='WLR_sklearn',
         regu=None,
         info=False,
-        gpu=True,
+        gpu=False,
         evalshap=False
     )
     # args_hv: 'compute_pred', 'compute_pred_subgraph', 'basic_default', 'neutral', 'compute_pred_regu'
@@ -153,7 +153,7 @@ def main():
                 #args.regu = 0
 
             # Neighbours
-            
+            """
             filter_useless_nodes(args.seed,
                                 args.model,
                                 args.dataset,
@@ -175,7 +175,7 @@ def main():
                                 args.gpu,
                                 args.fullempty,
                                 args.S)
-            
+            """
             # Only study features
             #if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
                 #args.regu = 1

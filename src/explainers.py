@@ -116,33 +116,30 @@ class GraphSHAP():
                                                             num_hops=1,
                                                             edge_index=self.data.edge_index)
             
-
             # Specific case: features in subgraph
             if args_hv == 'compute_pred_subgraph':
                 # Determine z': features and neighbours whose importance is investigated
                 discarded_feat_idx = []
                 # Consider only non-zero entries in the subgraph of v
                 if args_feat == 'Null':
-                    feat_idx = self.data.x[self.neighbours, :].mean(axis=0).nonzero()
+                    feat_idx = self.data.x[self.neighbours, :].mean(
+                        axis=0).nonzero()
                     self.F = feat_idx.size()[0]
-
-                # Consider all features (+ use expectation like below)
                 elif args_feat == 'All':
                     self.F = self.data.x[node_index, :].shape[0]
-                    feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
-
-                # Consider only features whose aggregated value is different from expected one
-                else: 
+                    feat_idx = torch.unsqueeze(
+                        torch.arange(self.data.x.size(0)), 1)
+                else:
                     # Stats dataset
                     std = self.data.x.std(axis=0)
                     mean = self.data.x.mean(axis=0)
                     # Feature intermediate rep
-                    mean_subgraph = self.data.x[self.neighbours,:].mean(axis=0)
+                    mean_subgraph = self.data.x[node_index, :]
                     # Select relevant features only - (E-e,E+e)
                     mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
-                                torch.ones_like(mean_subgraph)*100)
+                                                torch.ones_like(mean_subgraph)*100)
                     mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
-                                torch.ones_like(mean_subgraph)*100)
+                                                torch.ones_like(mean_subgraph)*100)
                     feat_idx = (mean_subgraph == 100).nonzero()
                     discarded_feat_idx = (mean_subgraph != 100).nonzero()
                     self.F = feat_idx.shape[0]
@@ -154,26 +151,41 @@ class GraphSHAP():
 
                 # Total number of features + neighbours considered for node v
                 self.M = self.F+D
-                
-                # Def range of endcases considered 
-                args_K = S
 
-                # Necessary argument if we choose to sample all possible coalitions
-                if args_coal == 'All':
-                    num_samples = min(10000,2**self.M)
+                # Def range of endcases considered
+                args_K = 2
 
-                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
-                z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
-                
-                # Compute |z'| for each sample z': number of non-zero entries
-                s = (z_ != 0).sum(dim=1)
+                if args_coal == 'SmarterSeparate':
+                    weights = torch.zeros(num_samples, dtype=torch.float64)
+                    # Features only
+                    num = num_samples//2
+                    z_bis = eval('self.' + args_coal)(num,
+                                                      args_K, 1)  # SmarterRegu
+                    s = (z_bis != 0).sum(dim=1)
+                    weights[:num] = self.shapley_kernel(s, self.F)
+                    z_ = torch.zeros(num_samples, self.M)
+                    z_[:num, :self.F] = z_bis
+                    # Node only
+                    z_bis = eval('self.' + args_coal)(
+                        num + num_samples % 2, args_K, 0)  # SmarterRegu
+                    s = (z_bis != 0).sum(dim=1)
+                    weights[num:] = self.shapley_kernel(s, D)
+                    z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
+                    z_[num:, self.F:] = z_bis
+                    del z_bis, s
 
-                ### GRAPHSHAP KERNEL: define weights associated with each sample 
-                weights = self.shapley_kernel(s, self.M)
-                if max(weights) > 9 and info:
-                    print('!! Empty or/and full coalition is included !!')
+                else:
+                    ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
+                    z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
 
-            
+                    # Compute |z'| for each sample z': number of non-zero entries
+                    s = (z_ != 0).sum(dim=1)
+
+                    ### GRAPHSHAP KERNEL: define weights associated with each sample
+                    weights = self.shapley_kernel(s, self.M)
+                    if max(weights) > 9 and info:
+                        print('!! Empty or/and full coalition is included !!')
+
             # Usual case
             else:
                 discarded_feat_idx = []
@@ -184,38 +196,40 @@ class GraphSHAP():
                     self.F = feat_idx.size()[0]
                 elif args_feat == 'All':
                     self.F = self.data.x[node_index, :].shape[0]
-                    feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
-                else: 
+                    feat_idx = torch.unsqueeze(
+                        torch.arange(self.data.x.size(0)), 1)
+                else:
                     # Stats dataset
                     std = self.data.x.std(axis=0)
                     mean = self.data.x.mean(axis=0)
                     # Feature intermediate rep
-                    mean_subgraph = self.data.x[node_index,:]
+                    mean_subgraph = self.data.x[node_index, :]
                     # Select relevant features only - (E-e,E+e)
                     mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
-                                torch.ones_like(mean_subgraph)*100)
+                                                torch.ones_like(mean_subgraph)*100)
                     mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
-                                torch.ones_like(mean_subgraph)*100)
+                                                torch.ones_like(mean_subgraph)*100)
                     feat_idx = (mean_subgraph == 100).nonzero()
                     discarded_feat_idx = (mean_subgraph != 100).nonzero()
                     self.F = feat_idx.shape[0]
                     del mean, mean_subgraph, std
-                
+
                 # Remove node v index from neighbours and store their number in D
                 self.neighbours = self.neighbours[self.neighbours != node_index]
                 D = self.neighbours.shape[0]
 
                 # Total number of features + neighbours considered for node v
                 self.M = self.F+D
-                
-                # Def range of endcases considered 
+
+                # Def range of endcases considered
                 args_K = S
 
                 if args_coal == 'SmarterSeparate':
                     weights = torch.zeros(num_samples, dtype=torch.float64)
                     # Features only
                     num = num_samples//2
-                    z_bis = eval('self.' + args_coal)(num, args_K, 1) # SmarterSeparate
+                    z_bis = eval('self.' + args_coal)(num,
+                                                      args_K, 1)  # SmarterSeparate
                     s = (z_bis != 0).sum(dim=1)
                     weights[:num] = self.shapley_kernel(s, self.F)
                     z_ = torch.zeros(num_samples, self.M)
@@ -228,22 +242,21 @@ class GraphSHAP():
                     z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
                     z_[num:, self.F:] = z_bis
                     del z_bis, s
-                else: 
+                else:
                     # Necessary argument if we choose to sample all possible coalitions
                     if args_coal == 'All':
-                        num_samples = min(10000,2**self.M)
+                        num_samples = min(10000, 2**self.M)
 
                     ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
                     z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
-                    
+
                     # Compute |z'| for each sample z': number of non-zero entries
                     s = (z_ != 0).sum(dim=1)
 
-                    ### GRAPHSHAP KERNEL: define weights associated with each sample 
+                    ### GRAPHSHAP KERNEL: define weights associated with each sample
                     weights = self.shapley_kernel(s, self.M)
                     if max(weights) > 9 and info:
                         print('!! Empty or/and full coalition is included !!')
-                    
 
 
             # Discard full and empty coalition if specified
@@ -417,7 +430,7 @@ class GraphSHAP():
         No random coalition at the end
 
         """
-        if regu=='None':
+        if regu==None:
             z_ = self.Smarter(num_samples, args_K, regu) 
             return z_
 

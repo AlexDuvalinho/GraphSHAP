@@ -51,19 +51,19 @@ def build_arguments():
                         help='Max size of coalitions sampled in priority and treated specifically')
 
     parser.set_defaults(
-        model='GCN',
+        model='GAT',
         dataset='Cora',
         seed=10,
         explainer='GraphSHAP',
-        node_indexes=[5],
+        node_indexes=[90],
         hops=2,
-        num_samples=200,
-        fullempty = None, 
+        num_samples=3000,
+        fullempty=None, 
         S=3,
-        hv='compute_pred_subgraph',
-        feat='Expectation',
-        coal='Smart',
-        g='WLS',
+        hv='compute_pred',
+        feat='Null',
+        coal='Smarter',
+        g='WLR_sklearn',
         multiclass=False,
         regu=None,
         info=True,
@@ -91,6 +91,8 @@ def main():
 
     args = build_arguments()
     fix_seed(args.seed)
+
+    #args.node_indexes = list(range(0, 20))
 
     # Load the dataset
     data = prepare_data(args.dataset, args.seed)
@@ -126,11 +128,46 @@ def main():
     print('number samples: ' ,len(explanations))
     print('dim expl:' , explanations[0].shape)
 
+
+
+    # TEST 
+    # Load the model
+    args.model = 'GCN'
+    model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
+    model = torch.load(model_path)
+
+    # Evaluate the model - test set
+    model.eval()
+    with torch.no_grad():
+        log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
+    test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+    print('Test accuracy is {:.4f}'.format(test_acc))
+    del log_logits, model_path, test_acc
+
+    # Explain it with GraphSHAP
+    explainer = eval(args.explainer)(data, model, args.gpu)
+    explanations_bis = explainer.explain(args.node_indexes,
+                                     args.hops,
+                                     args.num_samples,
+                                     args.info,
+                                     args.multiclass,
+                                     args.fullempty,
+                                     args.S,
+                                     args.hv,
+                                     args.feat,
+                                     args.coal,
+                                     args.g,
+                                     args.regu,
+                                     True)
+
+    print(np.sum(np.abs(explanations[0] - explanations_bis[0])))
+
     for expl in explanations:
         if args.multiclass:
             print('g(x_): ', sum(expl[:,3]))
         else:
             print('g(x_): ', sum(expl))
+
 
 if __name__ == "__main__":
     main()
