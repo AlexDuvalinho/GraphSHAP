@@ -1,8 +1,8 @@
 """ explainers.py
 
-    Define the different explainers: GraphSHAP + benchmarks
+    Define the different explainers: GraphSVX + benchmarks
 """
-# Import packages 
+# Import packages
 import random
 import time
 import warnings
@@ -31,40 +31,139 @@ from src.plots import (denoise_graph, k_hop_subgraph, log_graph,
 warnings.filterwarnings("ignore")
 
 
-
-class GraphSHAP():
+class GraphSVX():
 
     def __init__(self, data, model, gpu=False):
-        self.model = model 
-        self.data = data 
-        self.gpu = gpu 
+        self.model = model
+        self.data = data
+        self.gpu = gpu
         self.F = None  # number of non zero node features
         self.neighbours = None  # neighbours considered
         self.M = None  # number of nonzero features - for each node index
 
-        self.model.eval() 
+        self.model.eval()
 
-    def explain(self, 
-                node_indexes=[0], 
-                hops=2, 
+    def explain_graphs(self,
+                      graph_indices=[0],
+                      hops=2,
+                      num_samples=10,
+                      info=True,
+                      multiclass=False,
+                      fullempty=None,
+                      S=3,
+                      args_hv='compute_pred',
+                      args_feat='Expectation',
+                      args_coal='Smarter',
+                      args_g='WLS',
+                      regu=None,
+                      vizu=False):
+
+        # Time
+        start = time.time()
+
+        # Explain several nodes iteratively
+        phi_list = []
+        for graph_index in graph_indices:
+
+            # Compute true prediction for original instance via explained GNN model
+            if self.gpu:
+                device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu')
+                self.model = self.model.to(device)
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x.cuda(),
+                        edge_index=self.data.edge_index.cuda()).exp()[graph_index].max(dim=0)
+            else:
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x,
+                        edge_index=self.data.edge_index).exp()[graph_index].max(dim=0)
+
+            # Remove node v index from neighbours and store their number in D
+            self.neighbours = list(range(self.data.x.shape[0]))
+            D = len(self.neighbours)
+
+            # Total number of features + neighbours considered for node v
+            self.F = 0
+            self.M = self.F+D
+
+            # Def range of endcases considered
+            args_K = S
+
+            if args_coal == 'SmarterSeparate':
+                weights = torch.zeros(num_samples, dtype=torch.float64)
+                # Features only
+                num = num_samples//2
+                z_bis = eval('self.' + args_coal)(num,
+                                                  args_K, 1)  # SmarterSeparate
+                s = (z_bis != 0).sum(dim=1)
+                weights[:num] = self.shapley_kernel(s, self.F)
+                z_ = torch.zeros(num_samples, self.M)
+                z_[:num, :self.F] = z_bis
+                # Node only
+                z_bis = eval('self.' + args_coal)(
+                    num + num_samples % 2, args_K, 0)  # SmarterSeparate
+                s = (z_bis != 0).sum(dim=1)
+                weights[num:] = self.shapley_kernel(s, D)
+                z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
+                z_[num:, self.F:] = z_bis
+                del z_bis, s
+            else:
+                # Necessary argument if we choose to sample all possible coalitions
+                if args_coal == 'All':
+                    num_samples = min(10000, 2**self.M)
+
+                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
+                z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
+
+                # Shuffle z_
+                z_ = z_[torch.randperm(z_.size()[0])]
+
+                # Compute |z'| for each sample z': number of non-zero entries
+                s = (z_ != 0).sum(dim=1)
+
+                ### GRAPHSHAP KERNEL: define weights associated with each sample
+                weights = self.shapley_kernel(s, self.M)
+
+            # Discard full and empty coalition if specified
+            if fullempty:
+                weights[(weights == 1000).nonzero()] = 0
+
+            ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
+            # Retrive z from z' and x_v, then compute f(z)
+            fz = self.graph_classification(
+                graph_index, num_samples, D, z_, args_K, args_feat, true_pred)
+
+            ### g: Weighted Linear Regression to learn shapley values
+            phi, base_value = eval('self.' + args_g)(z_, weights, fz,
+                                                     multiclass, info)
+
+            phi_list.append(phi)
+
+            return phi_list
+
+    def explain(self,
+                node_indexes=[0],
+                hops=2,
                 num_samples=10,
                 info=True,
                 multiclass=False,
                 fullempty=None,
                 S=3,
                 args_hv='compute_pred',
-                args_feat='Expectation', 
-                args_coal='Smarter', 
-                args_g = 'WLS',
+                args_feat='Expectation',
+                args_coal='Smarter',
+                args_g='WLS',
                 regu=None,
                 vizu=False):
-        """ Explain prediction for a particular node - GraphSHAP method
+        """ Explain prediction for a particular node - GraphSVX method
 
         Args:
             node_indexes (list, optional): indexes of the nodes of interest. Defaults to [0].
             hops (int, optional): number k of k-hop neighbours to consider in the subgraph 
                                                     around node_index. Defaults to 2.
-            num_samples (int, optional): number of samples we want to form GraphSHAP's new dataset. 
+            num_samples (int, optional): number of samples we want to form GraphSVX's new dataset. 
                                                     Defaults to 10.
             info (bool, optional): Print information about explainer's inner workings. 
                                                     And include vizualisation. Defaults to True.
@@ -80,13 +179,13 @@ class GraphSHAP():
         Returns:
                 [tensors]: shapley values for features/neighbours that influence node v's pred
                         and base value
-        """	
+        """
         # Time
         start = time.time()
 
-        # Explain several nodes iteratively 
+        # Explain several nodes iteratively
         phi_list = []
-        for node_index in node_indexes: 
+        for node_index in node_indexes:
 
             # Compute true prediction for original instance via explained GNN model
             if self.gpu: 
@@ -106,16 +205,16 @@ class GraphSHAP():
             # Construct the k-hop subgraph of the node of interest (v)
             self.neighbours, _, _, edge_mask =\
                 torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                    num_hops=hops,
-                                                    edge_index=self.data.edge_index)
+                                                     num_hops=hops,
+                                                     edge_index=self.data.edge_index)
             # Stores the indexes of the neighbours of v (+ index of v itself)
 
             # Retrieve 1-hop neighbours of v
             one_hop_neighbours, _, _, _ =\
-                        torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                            num_hops=1,
-                                                            edge_index=self.data.edge_index)
-            
+                torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+                                                     num_hops=1,
+                                                     edge_index=self.data.edge_index)
+
             # Specific case: features in subgraph
             if args_hv == 'compute_pred_subgraph':
                 # Determine z': features and neighbours whose importance is investigated
@@ -153,24 +252,25 @@ class GraphSHAP():
                 self.M = self.F+D
 
                 # Def range of endcases considered
-                args_K = 2
+                args_K = S
 
                 if args_coal == 'SmarterSeparate':
                     weights = torch.zeros(num_samples, dtype=torch.float64)
                     # Features only
-                    num = num_samples//2
-                    z_bis = eval('self.' + args_coal)(num,
-                                                      args_K, 1)  # SmarterRegu
+                    num = int(num_samples * self.F/self.M)
+                    z_bis = eval('self.' + args_coal)(num,args_K, 1)  # SmarterSeparate
+                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                     s = (z_bis != 0).sum(dim=1)
                     weights[:num] = self.shapley_kernel(s, self.F)
                     z_ = torch.zeros(num_samples, self.M)
                     z_[:num, :self.F] = z_bis
                     # Node only
                     z_bis = eval('self.' + args_coal)(
-                        num + num_samples % 2, args_K, 0)  # SmarterRegu
+                        num_samples-num, args_K, 0)  # SmarterSeparate
+                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                     s = (z_bis != 0).sum(dim=1)
                     weights[num:] = self.shapley_kernel(s, D)
-                    z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
+                    z_[num:, :] = torch.ones(num_samples-num, self.M)
                     z_[num:, self.F:] = z_bis
                     del z_bis, s
 
@@ -178,13 +278,15 @@ class GraphSHAP():
                     ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
                     z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
 
+                    # Shuffle
+                    z_ = z_[torch.randperm(z_.size()[0])]
+
                     # Compute |z'| for each sample z': number of non-zero entries
                     s = (z_ != 0).sum(dim=1)
 
                     ### GRAPHSHAP KERNEL: define weights associated with each sample
                     weights = self.shapley_kernel(s, self.M)
-                    if max(weights) > 9 and info:
-                        print('!! Empty or/and full coalition is included !!')
+
 
             # Usual case
             else:
@@ -227,21 +329,23 @@ class GraphSHAP():
                 if args_coal == 'SmarterSeparate':
                     weights = torch.zeros(num_samples, dtype=torch.float64)
                     # Features only
-                    num = num_samples//2
-                    z_bis = eval('self.' + args_coal)(num,
-                                                      args_K, 1)  # SmarterSeparate
+                    num = int(num_samples * self.F/self.M)
+                    z_bis = eval('self.' + args_coal)(num,args_K, 1)  
+                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                     s = (z_bis != 0).sum(dim=1)
                     weights[:num] = self.shapley_kernel(s, self.F)
                     z_ = torch.zeros(num_samples, self.M)
                     z_[:num, :self.F] = z_bis
                     # Node only
                     z_bis = eval('self.' + args_coal)(
-                        num + num_samples % 2, args_K, 0)  # SmarterSeparate
+                        num_samples-num, args_K, 0)  
+                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                     s = (z_bis != 0).sum(dim=1)
                     weights[num:] = self.shapley_kernel(s, D)
-                    z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
+                    z_[num:, :] = torch.ones(num_samples-num, self.M)
                     z_[num:, self.F:] = z_bis
                     del z_bis, s
+
                 else:
                     # Necessary argument if we choose to sample all possible coalitions
                     if args_coal == 'All':
@@ -249,6 +353,9 @@ class GraphSHAP():
 
                     ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
                     z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
+
+                    # Shuffle
+                    z_ = z_[torch.randperm(z_.size()[0])]
 
                     # Compute |z'| for each sample z': number of non-zero entries
                     s = (z_ != 0).sum(dim=1)
@@ -258,35 +365,38 @@ class GraphSHAP():
                     if max(weights) > 9 and info:
                         print('!! Empty or/and full coalition is included !!')
 
-
             # Discard full and empty coalition if specified
             if fullempty:
-                weights[(weights==1000).nonzero()]=0
-                
+                weights[(weights == 1000).nonzero()] = 0
+
             ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
             # Retrive z from z' and x_v, then compute f(z)
             fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-                                feat_idx, one_hop_neighbours, args_K, args_feat, 
-                                discarded_feat_idx, multiclass, true_pred)
-            
+                                         feat_idx, one_hop_neighbours, args_K, args_feat,
+                                         discarded_feat_idx, multiclass, true_pred)
+
             ### g: Weighted Linear Regression to learn shapley values
-            phi, base_value = eval('self.' + args_g)(z_, weights, fz, multiclass, info)		
-             
-            ### REGU
-            if type(regu)==int and not multiclass: 
+            phi, base_value = eval('self.' + args_g)(z_,
+                                                     weights, fz, multiclass, info)
+
+            ### RESCALING
+            if type(regu) == int and not multiclass:
                 expl = (true_conf.cpu() - base_value).detach().numpy()
                 phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
-                phi[self.F:] = ((1-regu) * expl / sum(phi[self.F:]) ) * phi[self.F:]
+                phi[self.F:] = ((1-regu) * expl /
+                                sum(phi[self.F:])) * phi[self.F:]
 
             ### PRINT some information
             if info:
                 print('Base value', base_value, 'for class ', true_pred.item())
-                self.print_info(D, node_index, phi, feat_idx, true_pred, true_conf, multiclass)
+                self.print_info(D, node_index, phi, feat_idx,
+                                true_pred, true_conf, multiclass)
 
             ### VISUALISATION
             if vizu:
-                self.vizu(edge_mask, node_index, phi, true_pred, hops, multiclass)
-            
+                self.vizu(edge_mask, node_index, phi,
+                          true_pred, hops, multiclass)
+
             # Time
             # TODO: remove after tests
             end = time.time()
@@ -298,7 +408,194 @@ class GraphSHAP():
 
         return phi_list
 
-    ################################  
+    def explain_feat_subgraph(self,
+                              node_indexes=[0],
+                              hops=2,
+                              num_samples=10,
+                              info=True,
+                              multiclass=False,
+                              fullempty=None,
+                              S=3,
+                              args_hv='compute_pred',
+                              args_feat='Expectation',
+                              args_coal='Smarter',
+                              args_g='WLS',
+                              regu=None,
+                              vizu=False):
+        """ Explain prediction for a particular node - GraphSVX method
+
+        Args:
+            node_indexes (list, optional): indexes of the nodes of interest. Defaults to [0].
+            hops (int, optional): number k of k-hop neighbours to consider in the subgraph 
+                                                    around node_index. Defaults to 2.
+            num_samples (int, optional): number of samples we want to form GraphSVX's new dataset. 
+                                                    Defaults to 10.
+            info (bool, optional): Print information about explainer's inner workings. 
+                                                    And include vizualisation. Defaults to True.
+            args_hv (str, optional): strategy used to convert simplified input z' to original
+                                                    input space z
+            args_feat (str, optional): way to switch off and discard node features (0 or expectation)
+            args_coal (str, optional): how we sample coalitions z'
+            args_g (str, optional): method used to train model g on (z', f(z))
+            multiclass (bool, optional): extension - consider predicted class only or all classes
+            regu (int, optional): extension - apply regularisation to balance importance granted
+                                                    to nodes vs features
+
+        Returns:
+                [tensors]: shapley values for features/neighbours that influence node v's pred
+                        and base value
+        """
+
+        # Time
+        start = time.time()
+
+        # Explain several nodes iteratively
+        phi_list = []
+        for node_index in node_indexes:
+
+            # Compute true prediction for original instance via explained GNN model
+            if self.gpu: 
+                device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu')
+                self.model = self.model.to(device)
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x.cuda(), 
+                        edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+            else: 
+                with torch.no_grad():
+                    true_conf, true_pred = self.model(
+                        x=self.data.x, 
+                        edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+
+            # Construct the k-hop subgraph of the node of interest (v)
+            self.neighbours, _, _, edge_mask =\
+                torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+                                                     num_hops=hops,
+                                                     edge_index=self.data.edge_index)
+            # Stores the indexes of the neighbours of v (+ index of v itself)
+
+            # Retrieve 1-hop neighbours of v
+            one_hop_neighbours, _, _, _ =\
+                torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
+                                                     num_hops=1,
+                                                     edge_index=self.data.edge_index)
+
+        # Specific case: features in subgraph
+            # Determine z': features and neighbours whose importance is investigated
+            discarded_feat_idx = []
+            # Consider only non-zero entries in the subgraph of v
+            if args_feat == 'Null':
+                feat_idx = self.data.x[self.neighbours, :].mean(
+                    axis=0).nonzero()
+                self.F = feat_idx.size()[0]
+            elif args_feat == 'All':
+                self.F = self.data.x[node_index, :].shape[0]
+                feat_idx = torch.unsqueeze(
+                    torch.arange(self.data.x.size(0)), 1)
+            else:
+                # Stats dataset
+                std = self.data.x.std(axis=0)
+                mean = self.data.x.mean(axis=0)
+                # Feature intermediate rep
+                mean_subgraph = self.data.x[node_index, :]
+                # Select relevant features only - (E-e,E+e)
+                mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
+                                            torch.ones_like(mean_subgraph)*100)
+                mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
+                                            torch.ones_like(mean_subgraph)*100)
+                feat_idx = (mean_subgraph == 100).nonzero()
+                discarded_feat_idx = (mean_subgraph != 100).nonzero()
+                self.F = feat_idx.shape[0]
+                del mean, mean_subgraph, std
+
+            # Remove node v index from neighbours and store their number in D
+            self.neighbours = self.neighbours[self.neighbours != node_index]
+            D = self.neighbours.shape[0]
+
+            # Total number of features + neighbours considered for node v
+            self.M = self.F+D
+
+            # Def range of endcases considered
+            args_K = S
+
+            if args_coal == 'SmarterSeparate':
+                weights = torch.zeros(num_samples, dtype=torch.float64)
+                # Features only
+                num = int(num_samples * self.F/self.M)
+                z_bis = eval('self.' + args_coal)(num,args_K, 1)  # SmarterSeparate
+                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
+                s = (z_bis != 0).sum(dim=1)
+                weights[:num] = self.shapley_kernel(s, self.F)
+                z_ = torch.zeros(num_samples, self.M)
+                z_[:num, :self.F] = z_bis
+                # Node only
+                z_bis = eval('self.' + args_coal)(
+                    num_samples-num, args_K, 0)  # SmarterSeparate
+                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
+                s = (z_bis != 0).sum(dim=1)
+                weights[num:] = self.shapley_kernel(s, D)
+                z_[num:, :] = torch.ones(num_samples-num, self.M)
+                z_[num:, self.F:] = z_bis
+                del z_bis, s
+
+            else:
+                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
+                z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
+
+                # Shuffle
+                z_ = z_[torch.randperm(z_.size()[0])]
+
+                # Compute |z'| for each sample z': number of non-zero entries
+                s = (z_ != 0).sum(dim=1)
+
+                ### GRAPHSHAP KERNEL: define weights associated with each sample
+                weights = self.shapley_kernel(s, self.M)
+
+
+            # Discard full and empty coalition if specified
+            if fullempty:
+                weights[(weights == 1000).nonzero()] = 0
+
+            ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
+            # Retrive z from z' and x_v, then compute f(z)
+            fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
+                                         feat_idx, one_hop_neighbours, args_K, args_feat,
+                                         discarded_feat_idx, multiclass, true_pred)
+
+            ### g: Weighted Linear Regression to learn shapley values
+            phi, base_value = eval('self.' + args_g)(z_,
+                                                     weights, fz, multiclass, info)
+
+            ### RESCALING
+            if type(regu) == int and not multiclass:
+                expl = (true_conf.cpu() - base_value).detach().numpy()
+                phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
+                phi[self.F:] = ((1-regu) * expl /
+                                sum(phi[self.F:])) * phi[self.F:]
+
+            ### PRINT some information
+            if info:
+                print('Base value', base_value, 'for class ', true_pred.item())
+                self.print_info(D, node_index, phi, feat_idx,
+                                true_pred, true_conf, multiclass)
+
+            ### VISUALISATION
+            if vizu:
+                self.vizu(edge_mask, node_index, phi,
+                          true_pred, hops, multiclass)
+
+            # Time
+            end = time.time()
+            if info:
+                print('Time: ', end - start)
+
+            # Append explanations for this node to list of expl.
+            phi_list.append(phi)
+
+        return phi_list
+    
+    ################################
     # Coalition sampler
     ################################
     def SmarterSoftRegu(self, num_samples, args_K, regu):
@@ -306,8 +603,8 @@ class GraphSHAP():
         Still considers both joinlty
 
         Args:
-            - regu: 0 to favour neighbours, 1 for features, else no effect
-
+            - regu (float): param that favours either nodes (0) or features (1)
+            - args_K (int): number that define max size of coalitions favoured 
         """
 
         # Favour features - special coalitions don't study node's effect
@@ -316,7 +613,6 @@ class GraphSHAP():
             # self.M = self.F
             z_ = torch.ones(num_samples, self.M)
             z_[1::2] = torch.zeros(num_samples//2, self.M)
-            # z_[1, :] = torch.empty(1, self.M).random_(2)
             i = 2
             k = 1
             # Loop until all samples are created
@@ -334,7 +630,7 @@ class GraphSHAP():
                 else:
                     # Split in two number of remaining samples
                     # Half for specific coalitions with low k and rest random samples
-                    samp = i + 9*(num_samples - i)//10
+                    samp = i + 4*(num_samples - i)//5
                     while i < samp and k <= min(args_K, self.F):
                         # Sample coalitions of k1 neighbours or k1 features without repet and order.
                         L = list(combinations(range(self.F), k))
@@ -390,7 +686,7 @@ class GraphSHAP():
                 else:
                     # Split in two number of remaining samples
                     # Half for specific coalitions with low k and rest random samples
-                    samp = i + 2*(num_samples - i)//3
+                    samp = i + 4*(num_samples - i)//5
                     while i < samp and k <= min(args_K, D):
                         # Sample coalitions of k1 neighbours or k1 features without repet and order.
                         L = list(combinations(range(self.F, self.M), k))
@@ -430,8 +726,8 @@ class GraphSHAP():
         No random coalition at the end
 
         """
-        if regu==None:
-            z_ = self.Smarter(num_samples, args_K, regu) 
+        if regu == None:
+            z_ = self.Smarter(num_samples, args_K, regu)
             return z_
 
         # Favour features - special coalitions don't study node's effect
@@ -441,7 +737,7 @@ class GraphSHAP():
             z_ = torch.ones(num_samples, M)
             z_[1::2] = torch.zeros(num_samples//2, M)
             # z_[1, :] = torch.empty(1, self.M).random_(2)
-            i = 2 
+            i = 2
             k = 1
             # Loop until all samples are created
             while i < num_samples:
@@ -458,10 +754,11 @@ class GraphSHAP():
                 else:
                     # Split in two number of remaining samples
                     # Half for specific coalitions with low k and rest random samples
+                    #samp = i + 4*(num_samples - i)//5
                     samp = num_samples
-                    while i<samp and k<=min(args_K, self.F):
-                        # Sample coalitions of k1 neighbours or k1 features without repet and order. 
-                        L = list( combinations(range(self.F),k) )
+                    while i < samp and k <= min(args_K, self.F):
+                        # Sample coalitions of k1 neighbours or k1 features without repet and order.
+                        L = list(combinations(range(self.F), k))
                         random.shuffle(L)
                         L = L[:samp+1]
 
@@ -480,20 +777,20 @@ class GraphSHAP():
                                 return z_
                         k += 1
 
-                    # Sample random coalitions 
+                    # Sample random coalitions
                     z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
                     return z_
             return z_
-        
+
         # Favour neighbour
-        else: 
+        else:
             # Define empty and full coalitions
             D = len(self.neighbours)
             M = D
-            # self.F = 0 
+            # self.F = 0
             z_ = torch.ones(num_samples, M)
             z_[1::2] = torch.zeros(num_samples//2, M)
-            i = 2 
+            i = 2
             k = 1
             # Loop until all samples are created
             while i < num_samples:
@@ -510,10 +807,11 @@ class GraphSHAP():
                 else:
                     # Split in two number of remaining samples
                     # Half for specific coalitions with low k and rest random samples
+                    #samp = i + 4*(num_samples - i)//5
                     samp = num_samples
-                    while i<samp and k<=min(args_K, D):
-                        # Sample coalitions of k1 neighbours or k1 features without repet and order. 
-                        L = list( combinations(range(0, M), k) )
+                    while i < samp and k <= min(args_K, D):
+                        # Sample coalitions of k1 neighbours or k1 features without repet and order.
+                        L = list(combinations(range(0, M), k))
                         random.shuffle(L)
                         L = L[:samp+1]
 
@@ -534,7 +832,7 @@ class GraphSHAP():
                                 return z_
                         k += 1
 
-                    # Sample random coalitions 
+                    # Sample random coalitions
                     z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
                     return z_
             return z_
@@ -553,7 +851,7 @@ class GraphSHAP():
         # Define empty and full coalitions
         z_ = torch.ones(num_samples, self.M)
         z_[1::2] = torch.zeros(num_samples//2, self.M)
-        i = 2 
+        i = 2
         k = 1
         # Loop until all samples are created
         while i < num_samples:
@@ -571,9 +869,10 @@ class GraphSHAP():
                 # Split in two number of remaining samples
                 # Half for specific coalitions with low k and rest random samples
                 samp = i + 4*(num_samples - i)//5
-                while i<samp and k<=min(args_K, self.F, self.M-self.F):
-                    # Sample coalitions of k1 neighbours or k1 features without repet and order. 
-                    L = list( combinations(range(self.F),k) ) + list( combinations(range(self.F,self.M), k) )
+                while i < samp and k <= args_K:
+                    # Sample coalitions of k1 neighbours or k1 features without repet and order.
+                    L = list(combinations(range(self.F), k)) + \
+                        list(combinations(range(self.F, self.M), k))
                     random.shuffle(L)
                     L = L[:samp+1]
 
@@ -583,18 +882,20 @@ class GraphSHAP():
                         i += 1
                         # If limit reached, sample random coalitions
                         if i == samp:
-                            z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+                            z_[i:, :] = torch.empty(
+                                num_samples-i, self.M).random_(2)
                             return z_
                         # Coalitions (No nei, k feat) or (No feat, k nei)
                         z_[i, L[j]] = torch.ones(k)
                         i += 1
                         # If limit reached, sample random coalitions
                         if i == samp:
-                            z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+                            z_[i:, :] = torch.empty(
+                                num_samples-i, self.M).random_(2)
                             return z_
                     k += 1
 
-                # Sample random coalitions 
+                # Sample random coalitions
                 z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
                 return z_
         return z_
@@ -645,13 +946,15 @@ class GraphSHAP():
                     z_[i, M[j][1]] = torch.tensor(0)
                     i += 1
                     if i == samp:
-                        z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+                        z_[i:, :] = torch.empty(
+                            num_samples-i, self.M).random_(2)
                         return z_
                     z_[i, M[j][0]] = torch.tensor(1)
                     z_[i, M[j][1]] = torch.tensor(1)
                     i += 1
                     if i == samp:
-                        z_[i:, :] = torch.empty(num_samples-i, self.M).random_(2)
+                        z_[i:, :] = torch.empty(
+                            num_samples-i, self.M).random_(2)
                         return z_
                 k += 1
             else:
@@ -659,13 +962,13 @@ class GraphSHAP():
                 return z_
 
         return z_
-    
+
     def Random(self, num_samples, *unused):
         z_ = torch.empty(num_samples, self.M).random_(2)
         # z_[0, :] = torch.ones(self.M)
         # z_[1, :] = torch.zeros(self.M)
         return z_
-    
+
     def All(self, num_samples, *unsused):
         """Sample all possible 2^{M+N} coalitions (unordered, without replacement)
 
@@ -676,18 +979,18 @@ class GraphSHAP():
         """
         z_ = torch.zeros(num_samples, self.M)
         i = 0
-        try: 
-            for k in range(0,self.M+1):
-                L = list( combinations(range(0,self.M),k) )
+        try:
+            for k in range(0, self.M+1):
+                L = list(combinations(range(0, self.M), k))
                 for j in range(len(L)):
                     z_[i, L[j]] = torch.ones(k)
-                    i+=1
-        except IndexError: # deal with boundary
+                    i += 1
+        except IndexError:  # deal with boundary
             return z_
         return z_
 
     ################################
-    # GraphSHAP kernel
+    # GraphSVX kernel
     ################################
     def shapley_kernel(self, s, M):
         """ Computes a weight for each newly created sample 
@@ -718,6 +1021,7 @@ class GraphSHAP():
     ################################
     # COMPUTE PREDICTIONS f(z)
     ################################
+
     def compute_pred_subgraph(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
@@ -737,10 +1041,10 @@ class GraphSHAP():
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.x.size(1))
-        else: 
+        else:
             av_feat_values = self.data.x.mean(dim=0)
             # 'All' and 'Expectation'
-        
+
         # Store nodes and features not sampled
         excluded_feat = {}
         excluded_nei = {}
@@ -766,15 +1070,15 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        if multiclass: 
+        if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
-        else: 
+        else:
             fz = torch.zeros(num_samples)
         # classes_labels = torch.zeros(num_samples)
         # pred_confidence = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
-        for (key, ex_nei), (_, ex_feat)  in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
+        for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
             positions = []
             # For each excluded neighbour, retrieve the column index of its occurences
@@ -794,7 +1098,7 @@ class GraphSHAP():
             # Change feature vector for node of interest - excluded and discarded features
             X = deepcopy(self.data.x)
             X[node_index, ex_feat] = av_feat_values[ex_feat]
-            if args_feat != 'Null' and discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
+            if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
                 X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
                 # May delete - should be an approximation
                 #if args_feat == 'Expectation':
@@ -803,15 +1107,15 @@ class GraphSHAP():
 
             # Special case - consider only nei. influence if too few feat included
             if self.F - len(ex_feat) < min(D - len(ex_nei), args_K):
-                # Don't set features = Exp or 0 in the whole subgraph, only for v. 
-                
+                # Don't set features = Exp or 0 in the whole subgraph, only for v.
+
                 # Look at the 2-hop neighbours included
                 # Make sure that they are connected to v (with current nodes sampled nodes)
                 included_nei = set(
                     self.neighbours.detach().numpy()).difference(ex_nei)
                 included_nei = included_nei.difference(
                     one_hop_neighbours.detach().numpy())
-                
+
                 for incl_nei in included_nei:
                     l = nx.shortest_path(G, source=node_index, target=incl_nei)
                     if set(l[1:-1]).isdisjoint(ex_nei):
@@ -825,8 +1129,9 @@ class GraphSHAP():
             # Usual case - exclude features for the whole subgraph
             else:
                 for val in ex_feat:
-                    X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
-                
+                    X[self.neighbours, val] = av_feat_values[val].repeat(
+                        D)  # 0
+
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
@@ -836,12 +1141,12 @@ class GraphSHAP():
                     proba = self.model(x=X, edge_index=A).exp()[node_index]
 
             # Store final class prediction and confience level
-            # pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1) 
+            # pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1)
 
             # Store predicted class label in fz
             if multiclass:
                 fz[key] = proba
-            else: 
+            else:
                 fz[key] = proba[true_pred]
 
         return fz
@@ -849,7 +1154,7 @@ class GraphSHAP():
     def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
-            Change feature value only for node itself instead of subgraph. Favours neighbours' effect.
+            Standard method
 
         Args: 
                 Variables are defined exactly as defined in explainer function 
@@ -866,8 +1171,9 @@ class GraphSHAP():
             av_feat_values = torch.zeros(self.data.x.size(1))
         else:
             av_feat_values = self.data.x.mean(dim=0)
+            #av_feat_values = self.data.x[402]
         # or random feature vector made of random value across each col of X
-        # TODO: change hier for constrastive explanation
+        # NOTE: change hier for constrastive explanation
 
         excluded_feat = {}
         excluded_nei = {}
@@ -899,7 +1205,7 @@ class GraphSHAP():
             fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
-        for (key, ex_nei), (_, ex_feat)  in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
+        for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
             positions = []
             # For each excluded neighbour, retrieve the column index of its occurences
@@ -924,7 +1230,7 @@ class GraphSHAP():
 
             # Indirect effect - if few included neighbours
             # Make sure that they are connected to v (with current nodes sampled nodes)
-            if 0 < len(self.neighbours) - len(ex_nei) < args_K: 
+            if 0 < len(self.neighbours) - len(ex_nei) < args_K:
                 included_nei = set(
                     self.neighbours.detach().numpy()).difference(ex_nei)
                 included_nei = included_nei.difference(
@@ -937,8 +1243,8 @@ class GraphSHAP():
                         for n in range(1, len(l)-1):
                             A = torch.cat((A, torch.tensor(
                                 [[l[n-1]], [l[n]]])), dim=-1)
-                            X[l[n], :] = X[node_index,:] #av_feat_values
-                            # TODO: eval this against av.values. 
+                            X[l[n], :] = X[node_index, :]  # av_feat_values
+                            # TODO: eval this against av.values.
 
             # Apply model on (X,A) as input.
             if self.gpu:
@@ -956,10 +1262,78 @@ class GraphSHAP():
 
         return fz
 
-    def graph_classification(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
+    def graph_classification(self, graph_index, num_samples, D, z_, args_K, args_feat, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
             Graph Classification task
+
+        Args:
+            Variables are defined exactly as defined in explainer function
+
+        Returns:
+            (tensor): f(z) - probability of belonging to each target classes, for all samples z
+            Dimension (N * C) where N is num_samples and C num_classses.
+        """
+        # Softmax
+        fct = torch.nn.Softmax(dim=0)
+
+        excluded_feat = {}
+        excluded_nei = {}
+
+        # Define excluded_feat and excluded_nei for each z'
+        for i in range(num_samples):
+            # Define new neighbourhood
+            # Store index of neighbours that need to be isolated (not sampled, z_j=0)
+            nodes_id = []
+            for j in range(D):
+                if z_[i, self.F+j] == 0:
+                    nodes_id.append(self.neighbours[j])
+            # Dico with key = num_sample id, value = excluded neighbour index
+            excluded_nei[i] = nodes_id
+
+        # Init
+        fz = torch.zeros(num_samples)
+
+        #av_feat_values = self.data.x.mean(dim=0)
+        #av_feat_values = np.mean(self.data.x[graph_index],axis=0)
+        av_feat_values = np.zeros(self.data.x[graph_index].shape[1])
+        adj = deepcopy(self.data.edge_index[graph_index])
+
+        # Create new matrix A and X - for each sample ≈ reform z from z'
+        for (key, ex_nei) in tqdm(excluded_nei.items()):
+
+            # Change adj matrix
+            A = deepcopy(adj)
+            #A[ex_nei, :] = 0
+            #A[:, ex_nei] = 0
+            self.data.edge_index[graph_index] = A
+
+            # Also change features of excluded nodes
+            X = deepcopy(self.data.x[graph_index])
+            for nei in ex_nei:
+                X[nei] = av_feat_values
+
+            # Apply model on (X,A) as input.
+            if self.gpu:
+                with torch.no_grad():
+                    proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+                        graph_index]
+            else:
+                with torch.no_grad():
+                    proba = self.model(x=X, edge_index=self.data.edge_index).exp()[graph_index]
+
+            # Softmax of function
+            fz[key] = fct(proba)[true_pred.item()]
+            #fz[key] = proba[true_pred.item()]
+
+            self.data.edge_index[graph_index] = adj
+
+        return fz
+
+    def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
+        """ Construct z from z' and compute prediction f(z) for each sample z'
+            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+            Does not deal with isolated 2 hops neighbours (or more)
 
         Args:
                 Variables are defined exactly as defined in explainer function
@@ -968,10 +1342,6 @@ class GraphSHAP():
                 (tensor): f(z) - probability of belonging to each target classes, for all samples z
                 Dimension (N * C) where N is num_samples and C num_classses.
         """
-        G = torch_geometric.utils.to_networkx(self.data)
-
-        # We need to recover z from z' - wrt sampled neighbours and node features
-        # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.x.size(1))
         else:
@@ -982,7 +1352,7 @@ class GraphSHAP():
         excluded_nei = {}
 
         # Define excluded_feat and excluded_nei for each z'
-        for i in tqdm(range(num_samples)):
+        for i in range(num_samples):
 
             # Define new node features dataset (we only modify x_v for now)
             # Store index of features that are not sampled (z_j=0)
@@ -1008,7 +1378,7 @@ class GraphSHAP():
             fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
-        for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
+        for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
             positions = []
             # For each excluded neighbour, retrieve the column index of its occurences
@@ -1024,98 +1394,17 @@ class GraphSHAP():
 
             # Change feature vector for node of interest
             X = deepcopy(self.data.x)
-            X[:, ex_feat] = av_feat_values[ex_feat]
-    
-            # Set discarded features to an average value when few neighbours
-            #if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
-            #    X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
-                
-            # Apply model on (X,A) as input.
-            #TODO: GRAPH CLASSIFICATION MODEL
-            if self.gpu:
-                with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()
-            else:
-                with torch.no_grad():
-                    proba = self.model(x=X, edge_index=A).exp()
-
-        return fz
-
-    def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
-            Does not consider endcases and does not deal with isolated 2 hops neighbours (or more)
-
-        Args:
-                Variables are defined exactly as defined in explainer function
-
-        Returns:
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
-                Dimension (N * C) where N is num_samples and C num_classses.
-        """
-        if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
-        else:
-            av_feat_values = self.data.x.mean(dim=0)
-
-        # or random feature vector made of random value across each col of X
-        excluded_feat = {}
-        excluded_nei = {}
-
-        # Define excluded_feat and excluded_nei for each z'
-        for i in tqdm(range(num_samples)):
-
-            # Define new node features dataset (we only modify x_v for now)
-            # Store index of features that are not sampled (z_j=0)
-            feats_id = []
-            for j in range(self.F):
-                if z_[i, j].item() == 0:
-                    feats_id.append(feat_idx[j].item())
-            excluded_feat[i] = feats_id
-
-            # Define new neighbourhood
-            # Store index of neighbours that need to be isolated (not sampled, z_j=0)
-            nodes_id = []
-            for j in range(D):
-                if z_[i, self.F+j] == 0:
-                    nodes_id.append(self.neighbours[j].item())
-            # Dico with key = num_sample id, value = excluded neighbour index
-            excluded_nei[i] = nodes_id
-
-        # Init label f(z) for graphshap dataset - consider all classes
-        if multiclass:
-            fz = torch.zeros((num_samples, self.data.num_classes))
-        else:
-            fz = torch.zeros(num_samples)
-
-        # Create new matrix A and X - for each sample ≈ reform z from z'
-        for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
-
-            positions = []
-            # For each excluded neighbour, retrieve the column index of its occurences
-            # in the adj matrix - store them in positions (list)
-            for val in ex_nei:
-                pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
-                positions += pos
-            # Create new adjacency matrix for that sample
-            positions = list(set(positions))
-            A = np.array(self.data.edge_index)
-            A = np.delete(A, positions, axis=1)
-            A = torch.tensor(A)
-
-            # Change feature vector for node of interest 
-            X = deepcopy(self.data.x)
             X[node_index, ex_feat] = av_feat_values[ex_feat]
 
             # Discarded features approx
             # if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
             #     X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
-            
+
             # Features in subgraph
             # for val in ex_feat:
             #     X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
 
-            # Apply model on (X,A) as input.
+             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
                     proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
@@ -1147,9 +1436,9 @@ class GraphSHAP():
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.x.size(1))
-        else: 
-            av_feat_values = self.data.x.mean(dim=0) 
-        # or random feature vector made of random value across each col of X 
+        else:
+            av_feat_values = self.data.x.mean(dim=0)
+        # or random feature vector made of random value across each col of X
 
         excluded_feat = {}
         excluded_nei = {}
@@ -1175,25 +1464,26 @@ class GraphSHAP():
             excluded_nei[i] = nodes_id
 
         # Init label f(z) for graphshap dataset - consider all classes
-        if multiclass: 
+        if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
-        else: 
+        else:
             fz = torch.zeros(num_samples)
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
-        for (key, ex_nei), (_, ex_feat)  in zip(excluded_nei.items(), excluded_feat.items()):
+        for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
 
             # Change feature vector for node of interest
             X = deepcopy(self.data.x)
 
             # For each excluded node, retrieve the column index of its occurences
             # in the adj matrix - store them in positions (list)
-            X[ex_nei,:]=av_feat_values.repeat(len(ex_nei),1)
+            A = self.data.edge_index
+            X[ex_nei, :] = av_feat_values.repeat(len(ex_nei), 1)
             # Set all excluded features to expected value for node index only
             X[node_index, ex_feat] = av_feat_values[ex_feat]
             if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
                 X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
-                
+
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
@@ -1211,9 +1501,9 @@ class GraphSHAP():
                 fz[key] = proba[true_pred]
 
         return fz
-    
+
         ################################
-    
+
     def compute_pred_regu(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
@@ -1245,7 +1535,7 @@ class GraphSHAP():
 
         ### Look only at features
         # TODO: check if regu==1 would work
-        if self.M == self.F: 
+        if self.M == self.F:
             excluded_feat = {}
 
             for i in range(num_samples):
@@ -1257,13 +1547,13 @@ class GraphSHAP():
 
             for key, ex_feat in tqdm(excluded_feat.items()):
                 # Change feature vector for node of interest - excluded and discarded features
-                X = deepcopy(self.data.x) 
+                X = deepcopy(self.data.x)
                 X[node_index, ex_feat] = av_feat_values[ex_feat]
-                
+
                 # Features in subgraph
                 #for val in ex_feat:
                 #    X[self.neighbours, val] = av_feat_values[val].repeat(D)
-                
+
                 # Apply model on (X,A) as input.
                 if self.gpu:
                     with torch.no_grad():
@@ -1271,14 +1561,14 @@ class GraphSHAP():
                             node_index]
                 else:
                     with torch.no_grad():
-                        proba = self.model(x=X, edge_index=self.data.edge_index).exp()[node_index]
+                        proba = self.model(x=X, edge_index=self.data.edge_index).exp()[
+                            node_index]
 
             # Store predicted class label in fz
             if multiclass:
                 fz[key] = proba
-            else: 
+            else:
                 fz[key] = proba[true_pred]
-            
 
         ### Look only at neighbours
         elif self.M == len(self.neighbours):
@@ -1295,7 +1585,8 @@ class GraphSHAP():
             for key, ex_nei in tqdm(excluded_nei.items()):
                 positions = []
                 for val in ex_nei:
-                    pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
+                    pos = (self.data.edge_index == val).nonzero()[
+                        :, 1].tolist()
                     positions += pos
                 # Create new adjacency matrix for that sample
                 positions = list(set(positions))
@@ -1312,15 +1603,15 @@ class GraphSHAP():
                     included_nei = included_nei.difference(
                         one_hop_neighbours.detach().numpy())
                     for incl_nei in included_nei:
-                        l = nx.shortest_path(G, source=node_index, target=incl_nei)
+                        l = nx.shortest_path(
+                            G, source=node_index, target=incl_nei)
                         if set(l[1:-1]).isdisjoint(ex_nei):
                             pass
-                        else: 
+                        else:
                             for n in range(1, len(l)-1):
                                 A = torch.cat((A, torch.tensor(
                                     [[l[n-1]], [l[n]]])), dim=-1)
-                                X[l[n], :] = X[node_index,:] #av_feat_values 
-
+                                X[l[n], :] = X[node_index, :]  # av_feat_values
                 # Apply model on (X,A) as input.
                 if self.gpu:
                     with torch.no_grad():
@@ -1333,13 +1624,13 @@ class GraphSHAP():
                 # Store predicted class label in fz
                 if multiclass:
                     fz[key] = proba
-                else: 
+                else:
                     fz[key] = proba[true_pred]
-        
-        else: 
+
+        else:
             fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx,
-                        one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
-    
+                                   one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
+
         return fz
 
     ################################
@@ -1354,9 +1645,10 @@ class GraphSHAP():
             weights (torch.tensor): weights of each sample
             fz (torch.tensor): y data 
         """
-        # Define model 
-        if multiclass: 
-            our_model = LinearRegressionModel(z_.shape[1], self.data.num_classes)
+        # Define model
+        if multiclass:
+            our_model = LinearRegressionModel(
+                z_.shape[1], self.data.num_classes)
         else:
             our_model = LinearRegressionModel(z_.shape[1], 1)
         our_model.train()
@@ -1369,10 +1661,10 @@ class GraphSHAP():
         #optimizer = torch.optim.SGD(our_model.parameters(), lr=0.2)
         optimizer = torch.optim.Adam(our_model.parameters(), lr=0.2)
 
-        # Dataloader 
+        # Dataloader
         train = torch.utils.data.TensorDataset(z_, fz)
         train_loader = torch.utils.data.DataLoader(train, batch_size=20)
-        
+
         # Repeat for several epochs
         for epoch in range(100):
 
@@ -1380,19 +1672,19 @@ class GraphSHAP():
             #for x,y,w in zip(z_,fz, weights):
             for batch_idx, (dat, target) in enumerate(train_loader):
                 x, y = Variable(dat), Variable(target)
-            
-                # Forward pass: Compute predicted y by passing x to the model 
+
+                # Forward pass: Compute predicted y by passing x to the model
                 pred_y = our_model(x)
 
                 # Compute loss
                 loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
                 #loss = criterion(pred_y,y)
-                
+
                 # Zero gradients, perform a backward pass, and update the weights.
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                
+
                 # Store batch loss
                 av_loss.append(loss.item())
             if info:
@@ -1401,17 +1693,19 @@ class GraphSHAP():
         # Evaluate model
         our_model.eval()
         with torch.no_grad():
-            pred = our_model(z_) 
+            pred = our_model(z_)
         if info:
-            print('weighted r2 score: ', r2_score(pred, fz, multioutput='variance_weighted'))
-            if multiclass: 
+            print('weighted r2 score: ', r2_score(
+                pred, fz, multioutput='variance_weighted'))
+            if multiclass:
                 print(r2_score(pred, fz, multioutput='raw_values'))
             print('r2 score: ', r2_score(pred, fz, weights))
 
-        phi, base_value = [param.T for _,param in our_model.named_parameters()]
+        phi, base_value = [param.T for _,
+                           param in our_model.named_parameters()]
         phi = np.squeeze(phi, axis=1)
         return phi.detach().numpy().astype('float64'), base_value
-    
+
     def WLR_sklearn(self, z_, weights, fz, multiclass, info):
         """Train a weighted linear regression
 
@@ -1436,7 +1730,7 @@ class GraphSHAP():
         # Coefficients
         phi = reg.coef_
         base_value = reg.intercept_
-    
+
         return phi, base_value
 
     def WLR_Lasso(self, z_, weights, fz, multiclass, info):
@@ -1452,7 +1746,7 @@ class GraphSHAP():
         z_ = z_.detach().numpy()
         fz = fz.detach().numpy()
         # Fit weighted linear regression
-        reg = Lasso()
+        reg = Lasso(alpha=0.1)
         # reg = Lasso()
         reg.fit(z_, fz, weights)
         y_pred = reg.predict(z_)
@@ -1463,7 +1757,7 @@ class GraphSHAP():
         # Coefficients
         phi = reg.coef_
         base_value = reg.intercept_
-    
+
         return phi, base_value
 
     def WLS(self, z_, weights, fz, multiclass, info):
@@ -1479,22 +1773,23 @@ class GraphSHAP():
             [tensor]: estimated coefficients of our weighted linear regression - on (z', f(z))
             Dimension (M * num_classes)
         """
-        # Add constant term 
+        # Add constant term
         z_ = torch.cat([z_, torch.ones(z_.shape[0], 1)], dim=1)
 
-        # WLS to estimate parameters 
+        # WLS to estimate parameters
         try:
             tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
         except np.linalg.LinAlgError:  # matrix not invertible
-            if info: 
+            if info:
                 print('WLS: Matrix not invertible')
             tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
-            tmp = np.linalg.inv(tmp + np.diag(10**(-5) * np.random.randn(tmp.shape[1])))
+            tmp = np.linalg.inv(
+                tmp + np.diag(10**(-5) * np.random.randn(tmp.shape[1])))
         phi = np.dot(tmp, np.dot(
-                        np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
+            np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 
-        # Test accuracy 
-        y_pred=z_.detach().numpy() @ phi
+        # Test accuracy
+        y_pred = z_.detach().numpy() @ phi
         if info:
             print('r2: ', r2_score(fz, y_pred))
             print('weighted r2: ', r2_score(fz, y_pred, weights))
@@ -1502,7 +1797,7 @@ class GraphSHAP():
         return phi[:-1], phi[-1]
 
         ################################
-    
+
     ################################
     # INFO ON EXPLANATIONS
     ################################
@@ -1520,19 +1815,19 @@ class GraphSHAP():
               .format(true_pred, true_conf, self.data.y[node_index]))
 
         # Isolate explanations for predicted class - explain model choices
-        if multiclass: 
+        if multiclass:
             pred_explanation = phi[true_pred, :]
-        else: 
+        else:
             pred_explanation = phi
-        
+
         # print('Explanation for the class predicted by the model:', pred_explanation)
 
         # Look at repartition of weights among neighbours and node features
-        # Motivation for regularisation		
+        # Motivation for regularisation
         print('Weights for node features: ', sum(pred_explanation[:self.F]),
-         'and neighbours: ', sum(pred_explanation[self.F:]))
+              'and neighbours: ', sum(pred_explanation[self.F:]))
         print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[:self.F])),
-         'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
+              'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
 
         # Note we focus on explanation for class predicted by the model here, so there is a bias towards
         # positive weights in our explanations (proba is close to 1 everytime).
@@ -1549,8 +1844,8 @@ class GraphSHAP():
                     influential_feat[feat_idx[idx]] = val
                 else:
                     influential_nei[self.neighbours[idx-self.F]] = val
-            print( 'Most influential features: ', len([(item[0].item(), item[1].item()) for item in list(influential_feat.items())]),
-                  'and neighbours', len([(item[0].item(), item[1].item()) for item in list(influential_nei.items())]) )
+            print('Most influential features: ', len([(item[0].item(), item[1].item()) for item in list(influential_feat.items())]),
+                  'and neighbours', len([(item[0].item(), item[1].item()) for item in list(influential_nei.items())]))
 
         # Most influential features splitted bewteen neighbours and features
         if self.F > 5:
@@ -1564,7 +1859,7 @@ class GraphSHAP():
                   (item[0].item(), item[1].item()) for item in list(influential_feat.items())])
 
         # Most influential features splitted bewteen neighbours and features
-        if D > 5 and self.M!=self.F:
+        if D > 5 and self.M != self.F:
             _, idxs = torch.topk(torch.from_numpy(
                 np.abs(pred_explanation[self.F:])), 3)
             vals = [pred_explanation[self.F + idx] for idx in idxs]
@@ -1586,8 +1881,8 @@ class GraphSHAP():
             hops ([type]):  number of hops considered for subgraph around node of interest 
             multiclass: if we look at explanations for all classes or only for the predicted one
         """
-        if multiclass: 
-            phi = torch.tensor(phi[predicted_class,:])
+        if multiclass:
+            phi = torch.tensor(phi[predicted_class, :])
         else:
             phi = torch.from_numpy(phi).float()
 
@@ -1598,9 +1893,9 @@ class GraphSHAP():
                 mask[i] = 1
 
         # Identify one-hop neighbour
-        one_hop_nei, _, _, _ = k_hop_subgraph(
-                        node_index, 1, self.data.edge_index, relabel_nodes=True,
-                        num_nodes=None)
+        one_hop_nei, _, _, _ = torch_geometric.utils.k_hop_subgraph(
+            node_index, 1, self.data.edge_index, relabel_nodes=True,
+            num_nodes=None)
 
         # Attribute phi to edges in subgraph bsed on the incident node phi value
         for i, nei in enumerate(self.neighbours):
@@ -1622,7 +1917,7 @@ class GraphSHAP():
         # Increase coef for visibility and consider absolute contribution
         mask = torch.abs(mask)
 
-        # Vizu nodes 
+        # Vizu nodes
         ax, G = visualize_subgraph(self.model,
                                    node_index,
                                    self.data.edge_index,
@@ -1630,33 +1925,32 @@ class GraphSHAP():
                                    hops,
                                    y=self.data.y,
                                    threshold=None)
-        
+
         plt.savefig('results/GS1_{}_{}_{}'.format(self.data.name,
-                                           self.model.__class__.__name__,
-                                           node_index),
+                                                  self.model.__class__.__name__,
+                                                  node_index),
                     bbox_inches='tight')
 
-        # Other visualisation 
-        G = denoise_graph(self.data, mask, phi[self.F:], self.neighbours, node_index, feat=None, label=self.data.y, threshold_num=10)
-        
+        # Other visualisation
+        G = denoise_graph(self.data, mask, phi[self.F:], self.neighbours,
+                  node_index, feat=None, label=self.data.y, threshold_num=10)
+
         log_graph(G,
-                    identify_self=True,
-                    nodecolor="label",
-                    epoch=0,
-                    fig_size=(4, 3),
-                    dpi=300,
-                    label_node_feat=False,
-                    edge_vmax=None,
-                    args=None)
+                  identify_self=True,
+                  nodecolor="label",
+                  epoch=0,
+                  fig_size=(4, 3),
+                  dpi=300,
+                  label_node_feat=False,
+                  edge_vmax=None,
+                  args=None)
 
         plt.savefig('results/GS_{}_{}_{}'.format(self.data.name,
                                                  self.model.__class__.__name__,
-                                                  node_index),
-                                                  bbox_inches='tight')
-        
+                                                 node_index),
+                    bbox_inches='tight')
 
         #plt.show()
-
 
 
 class Greedy:
@@ -1671,42 +1965,41 @@ class Greedy:
 
         self.model.eval()
 
-
     def explain(self, node_index=0, hops=2, num_samples=0, info=False, multiclass=False, *unused):
         """
         Greedy explainer - only considers node features for explanations
         Computes the prediction proba with and without the targeted feature (repeat for all feat)
         This feature's importance is set as the normalised absolute difference in predictions above
-        :param num_samples, info: useless here (simply to match GraphSHAP structure)
+        :param num_samples, info: useless here (simply to match GraphSVX structure)
         """
         # Store indexes of these non zero feature values
         feat_idx = torch.arange(self.F)
 
         # Compute predictions
-        if self.gpu: 
+        if self.gpu:
             device = torch.device(
-                    'cuda' if torch.cuda.is_available() else 'cpu')
+                'cuda' if torch.cuda.is_available() else 'cpu')
             self.model = self.model.to(device)
             with torch.no_grad():
                 probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
                     node_index]
-        else: 
+        else:
             with torch.no_grad():
                 probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
                     node_index]
         probas, label = torch.topk(probas, k=1)
 
         # Init explanations vector
-        
-        if multiclass: 
+
+        if multiclass:
             coefs = np.zeros([self.M, self.data.num_classes])  # (m, #feats)
-            
+
             # Loop on all features - consider all classes
             for i, idx in enumerate(feat_idx):
                 idx = idx.item()
                 x_ = deepcopy(self.data.x)
                 x_[:, idx] = 0.0  # set feat of interest to 0
-                if self.gpu: 
+                if self.gpu:
                     with torch.no_grad():
                         probas_ = self.model(x=x_.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
                             node_index]  # [label].item()
@@ -1716,7 +2009,7 @@ class Greedy:
                             node_index]  # [label].item()
                 # Compute explanations with the following formula
                 coefs[i] = (torch.abs(probas-probas_)/probas).detach().numpy()
-        else: 
+        else:
             #probas = probas[label.item()]
             coefs = np.zeros([self.M])  # (m, #feats)
             # Loop on all features - consider all classes
@@ -1724,7 +2017,7 @@ class Greedy:
                 idx = idx.item()
                 x_ = deepcopy(self.data.x)
                 x_[:, idx] = 0.0  # set feat of interest to 0
-                if self.gpu: 
+                if self.gpu:
                     with torch.no_grad():
                         probas_ = self.model(x=x_.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
                             node_index, label.item()]  # [label].item()
@@ -1733,9 +2026,10 @@ class Greedy:
                         probas_ = self.model(x=x_, edge_index=self.data.edge_index).exp()[
                             node_index, label.item()]  # [label].item()
                 # Compute explanations with the following formula
-                coefs[i] = (torch.abs(probas-probas_)/probas).cpu().detach().numpy()
+                coefs[i] = (torch.abs(probas-probas_) /
+                            probas).cpu().detach().numpy()
 
-        return coefs 
+        return coefs
 
     def explain_nei(self, node_index=0, hops=2, num_samples=0, info=False, multiclass=False):
         """Greedy explainer - only considers node features for explanations
@@ -1753,14 +2047,14 @@ class Greedy:
         self.M = neighbours.shape[0]
 
         # Compute predictions
-        if self.gpu: 
+        if self.gpu:
             device = torch.device(
-                    'cuda' if torch.cuda.is_available() else 'cpu')
+                'cuda' if torch.cuda.is_available() else 'cpu')
             self.model = self.model.to(device)
             with torch.no_grad():
                 probas = self.model(x=self.data.x.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
                     node_index]
-        else: 
+        else:
             with torch.no_grad():
                 probas = self.model(x=self.data.x, edge_index=self.data.edge_index).exp()[
                     node_index]
@@ -1776,7 +2070,8 @@ class Greedy:
                 A_ = deepcopy(self.data.edge_index)
 
                 # Find all edges incident to the isolated neighbour
-                pos = (self.data.edge_index == nei_idx).nonzero()[:, 1].tolist()
+                pos = (self.data.edge_index == nei_idx).nonzero()[
+                    :, 1].tolist()
 
                 # Create new adjacency matrix where this neighbour is isolated
                 A_ = np.array(self.data.edge_index)
@@ -1784,18 +2079,19 @@ class Greedy:
                 A_ = torch.tensor(A_)
 
                 # Compute new prediction with updated adj matrix (without this neighbour)
-                if self.gpu: 
+                if self.gpu:
                     with torch.no_grad():
                         probas_ = self.model(x=self.data.x.cuda(), edge_index=A_.cuda()).exp()[
                             node_index]
-                else: 
+                else:
                     with torch.no_grad():
                         probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
                             node_index]
                 # Compute explanations with the following formula
-                coefs[i] = (torch.abs(probas-probas_)/probas).cpu().detach().numpy()
+                coefs[i] = (torch.abs(probas-probas_) /
+                            probas).cpu().detach().numpy()
 
-        else: 
+        else:
             probas = probas[label.item()]
             coefs = np.zeros(self.M)
             for i, nei_idx in enumerate(self.neighbours):
@@ -1803,7 +2099,8 @@ class Greedy:
                 A_ = deepcopy(self.data.edge_index)
 
                 # Find all edges incident to the isolated neighbour
-                pos = (self.data.edge_index == nei_idx).nonzero()[:, 1].tolist()
+                pos = (self.data.edge_index == nei_idx).nonzero()[
+                    :, 1].tolist()
 
                 # Create new adjacency matrix where this neighbour is isolated
                 A_ = np.array(self.data.edge_index)
@@ -1820,7 +2117,8 @@ class Greedy:
                         probas_ = self.model(x=self.data.x, edge_index=A_).exp()[
                             node_index, label.item()]
                 # Compute explanations with the following formula
-                coefs[i] = (torch.abs(probas-probas_)/probas).cpu().detach().numpy()
+                coefs[i] = (torch.abs(probas-probas_) /
+                            probas).cpu().detach().numpy()
 
         return coefs
 
@@ -1829,7 +2127,7 @@ class Random:
 
     def __init__(self, num_feats, K):
         self.num_feats = num_feats
-        self.K = K 
+        self.K = K
 
     def explain(self):
         return np.random.choice(self.num_feats, self.K)
@@ -1885,13 +2183,15 @@ class GraphLIME:
         if not self.cached or self.cached_result is None:
             # Get the initial prediction.
             with torch.no_grad():
-                if self.gpu: 
+                if self.gpu:
                     device = torch.device(
-                            'cuda' if torch.cuda.is_available() else 'cpu')
+                        'cuda' if torch.cuda.is_available() else 'cpu')
                     self.model = self.model.to(device)
-                    log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
-                else: 
-                    log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
+                    log_logits = self.model(
+                        x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
+                else:
+                    log_logits = self.model(
+                        x=x, edge_index=edge_index, **kwargs)
                 probas = log_logits.exp()
 
             self.cached_result = probas
@@ -1953,15 +2253,15 @@ class GraphLIME:
             L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
 
             K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
-            L_bar = L_bar.reshape(n ** 2, self.data.num_classes)  # (n ** 2,) 
+            L_bar = L_bar.reshape(n ** 2, self.data.num_classes)  # (n ** 2,)
 
             solver = LassoLars(self.rho, fit_intercept=False,
-                            normalize=False, positive=True)
+                               normalize=False, positive=True)
             solver.fit(K_bar * n, L_bar * n)
 
             return solver.coef_.T
 
-        else: 
+        else:
             K = self.__compute_kernel__(x, reduce=False)  # (n, n, d)
             L = self.__compute_kernel__(y, reduce=True)  # (n, n, 1)
 
@@ -1969,10 +2269,10 @@ class GraphLIME:
             L_bar = self.__compute_gram_matrix__(L)  # (n, n, 1)
 
             K_bar = K_bar.reshape(n ** 2, d)  # (n ** 2, d)
-            L_bar = L_bar.reshape(n ** 2,)  # (n ** 2,) 
+            L_bar = L_bar.reshape(n ** 2,)  # (n ** 2,)
 
             solver = LassoLars(self.rho, fit_intercept=False,
-                normalize=False, positive=True)
+                               normalize=False, positive=True)
             solver.fit(K_bar * n, L_bar * n)
 
             return solver.coef_
@@ -1989,15 +2289,16 @@ class LIME:
 
         self.model.eval()
 
-    def __init_predict__(self, x, edge_index, *unused,**kwargs):
-        
+    def __init_predict__(self, x, edge_index, *unused, **kwargs):
+
         # Get the initial prediction.
         with torch.no_grad():
-            if self.gpu: 
+            if self.gpu:
                 device = torch.device(
-                        'cuda' if torch.cuda.is_available() else 'cpu')
+                    'cuda' if torch.cuda.is_available() else 'cpu')
                 self.model = self.model.to(device)
-                log_logits = self.model(x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
+                log_logits = self.model(
+                    x=x.cuda(), edge_index=edge_index.cuda(), **kwargs)
             else:
                 log_logits = self.model(x=x, edge_index=edge_index, **kwargs)
             probas = log_logits.exp()
@@ -2015,7 +2316,7 @@ class LIME:
         x_ = deepcopy(x)
         original_feats = x[node_index, :]
 
-        if multiclass: 
+        if multiclass:
             sample_x = [original_feats.detach().numpy()]
             #sample_y = [proba.item()]
             sample_y = [probas[node_index, :].detach().numpy()]
@@ -2026,9 +2327,11 @@ class LIME:
 
                 with torch.no_grad():
                     if self.gpu:
-                        log_logits = self.model(x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
-                    else: 
-                        log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+                        log_logits = self.model(
+                            x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
+                    else:
+                        log_logits = self.model(
+                            x=x_, edge_index=edge_index, **kwargs)
                     probas_ = log_logits.exp()
 
                 #proba_ = probas_[node_index, label]
@@ -2038,7 +2341,7 @@ class LIME:
                 # sample_y.append(proba_.item())
                 sample_y.append(proba_.detach().numpy())
 
-        else: 
+        else:
             sample_x = [original_feats.detach().numpy()]
             sample_y = [proba.item()]
             # sample_y = [probas[node_index, :].detach().numpy()]
@@ -2049,9 +2352,11 @@ class LIME:
 
                 with torch.no_grad():
                     if self.gpu:
-                        log_logits = self.model(x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
+                        log_logits = self.model(
+                            x=x_.cuda(), edge_index=edge_index.cuda(), **kwargs)
                     else:
-                        log_logits = self.model(x=x_, edge_index=edge_index, **kwargs)
+                        log_logits = self.model(
+                            x=x_, edge_index=edge_index, **kwargs)
                     probas_ = log_logits.exp()
 
                 proba_ = probas_[node_index, label]
@@ -2076,7 +2381,8 @@ class SHAP():
         self.model = model
         self.data = data
         self.gpu = gpu
-        self.M = data.x.size(1)  # number of nonzero features - for each node index
+        # number of nonzero features - for each node index
+        self.M = data.x.size(1)
         self.neighbours = None
         self.F = self.M
 
@@ -2086,13 +2392,13 @@ class SHAP():
         """
         :param node_index: index of the node of interest
         :param hops: number k of k-hop neighbours to consider in the subgraph around node_index
-        :param num_samples: number of samples we want to form GraphSHAP's new dataset 
+        :param num_samples: number of samples we want to form GraphSVX's new dataset 
 
         :return: shapley values for features that influence node v's pred
         """
         # Compute true prediction of model, for original instance
         with torch.no_grad():
-            if self.gpu: 
+            if self.gpu:
                 device = torch.device(
                     'cuda' if torch.cuda.is_available() else 'cpu')
                 self.model = self.model.to(device)
@@ -2165,7 +2471,7 @@ class SHAP():
         # Init label f(z) for graphshap dataset - consider all classes
         if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
-        else: 
+        else:
             fz = torch.zeros(num_samples)
 
         # Do it for each sample
@@ -2184,13 +2490,15 @@ class SHAP():
             # Apply model on (X,A) as input.
             with torch.no_grad():
                 if self.gpu:
-                    proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[node_index]
+                    proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+                        node_index]
                 else:
-                    proba = self.model(x=X, edge_index=self.data.edge_index).exp()[node_index]
+                    proba = self.model(x=X, edge_index=self.data.edge_index).exp()[
+                        node_index]
             # Multiclass
             if not multiclass:
                 fz[i] = proba[true_pred]
-            else: 
+            else:
                 fz[i] = proba
 
         return fz
@@ -2203,24 +2511,26 @@ class SHAP():
         :return: estimated coefficients of our weighted linear regression - on (z', f(z))
         phi is of dimension (M * num_classes)
         """
-        # Add constant term 
+        # Add constant term
         z_ = torch.cat([z_, torch.ones(z_.shape[0], 1)], dim=1)
 
-        # WLS to estimate parameters 
+        # WLS to estimate parameters
         try:
             tmp = np.linalg.inv(np.dot(np.dot(z_.T, np.diag(weights)), z_))
         except np.linalg.LinAlgError:  # matrix not invertible
             tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
-            tmp = np.linalg.inv(tmp + np.diag(0.00001 * np.random.randn(tmp.shape[1])))
+            tmp = np.linalg.inv(
+                tmp + np.diag(0.00001 * np.random.randn(tmp.shape[1])))
         phi = np.dot(tmp, np.dot(
-                        np.dot(z_.T, np.diag(weights)), fz.cpu().detach().numpy()))
+            np.dot(z_.T, np.diag(weights)), fz.cpu().detach().numpy()))
 
-        # Test accuracy 
+        # Test accuracy
         # y_pred=z_.detach().numpy() @ phi
         #	print('r2: ', r2_score(fz, y_pred))
         #	print('weighted r2: ', r2_score(fz, y_pred, weights))
 
         return phi[:-1], phi[-1]
+
 
 class GNNExplainer():
 
@@ -2240,7 +2550,7 @@ class GNNExplainer():
     def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused):
         num_samples = num_samples//3
         # Use GNNE open source implem - outputs features's and edges importance
-        if self.gpu: 
+        if self.gpu:
             device = torch.device('cpu')
             self.model = self.model.to(device)
         explainer = GNNE(self.model, epochs=num_samples)
@@ -2250,7 +2560,7 @@ class GNNExplainer():
         except AssertionError:
             node_feat_mask, self.edge_mask = explainer.explain_node(
                 np.random.choice(range(1000)), self.data.x, self.data.edge_index)
-            
+
         # Transfer edge importance to node importance
         dico = {}
         for idx in torch.nonzero(self.edge_mask):
@@ -2261,8 +2571,8 @@ class GNNExplainer():
                 dico[node].append(self.edge_mask[idx])
         # Count neighbours in the subgraph
         self.neighbours = torch.tensor([index for index in dico.keys()])
-            
-        if multiclass:	
+
+        if multiclass:
             # Attribute an importance measure to each node = sum of incident edges' importance
             self.coefs = torch.zeros(
                 self.neighbours.shape[0], self.data.num_classes)
@@ -2279,8 +2589,8 @@ class GNNExplainer():
                 self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
 
             return torch.stack([node_feat_mask]*self.data.num_classes, 1)
-        
-        else: 
+
+        else:
             # Attribute an importance measure to each node = sum of incident edges' importance
             self.coefs = torch.zeros(
                 self.neighbours.shape[0])
@@ -2330,7 +2640,7 @@ class GNNExplainer():
                                    threshold=None)
 
         plt.savefig('results/GS1_{}_{}_{}'.format(self.data.name,
-                                            self.model.__class__.__name__,
-                                            node_index),
+                                                  self.model.__class__.__name__,
+                                                  node_index),
                     bbox_inches='tight')
         #plt.show()

@@ -1,7 +1,7 @@
 import torch
 
 # Colours for plots
-COLOURS = ['g', 'b', 'r', 'c', 'magenta', 'k']
+COLOURS = ['g', 'blue', 'r', 'c', 'm', 'k']
 
 # Input dimension of different datasets (features)
 INPUT_DIM = {'Cora': 1433,
@@ -48,7 +48,7 @@ hparams_Cora_GAT = {
 }
 
 params_Cora_GAT = {
-    'num_epochs': 80,
+    'num_epochs': 100,
     'lr': 0.005,
     'wd': 5e-4
 }
@@ -70,7 +70,7 @@ hparams_PubMed_GAT = {
 }
 
 params_PubMed_GAT = {
-    'num_epochs': 120,
+    'num_epochs': 250,
     'lr': 0.005,
     'wd': 5e-4
 }

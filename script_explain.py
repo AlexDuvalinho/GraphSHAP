@@ -1,5 +1,5 @@
 # Use files in src folder
-from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
+from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSVX,
                             Greedy)
 from src.data import prepare_data
 from src.train import accuracy
@@ -54,10 +54,10 @@ def build_arguments():
         model='GAT',
         dataset='Cora',
         seed=10,
-        explainer='GraphSHAP',
+        explainer='GraphSVX',
         node_indexes=[90],
         hops=2,
-        num_samples=3000,
+        num_samples=300,
         fullempty=None, 
         S=3,
         hv='compute_pred',
@@ -109,7 +109,7 @@ def main():
     print('Test accuracy is {:.4f}'.format(test_acc))
     del log_logits, model_path, test_acc
 
-    # Explain it with GraphSHAP
+    # Explain it with GraphSVX
     explainer = eval(args.explainer)(data, model, args.gpu)
     explanations = explainer.explain(args.node_indexes,
                                      args.hops,
@@ -144,7 +144,7 @@ def main():
     print('Test accuracy is {:.4f}'.format(test_acc))
     del log_logits, model_path, test_acc
 
-    # Explain it with GraphSHAP
+    # Explain it with GraphSVX
     explainer = eval(args.explainer)(data, model, args.gpu)
     explanations_bis = explainer.explain(args.node_indexes,
                                      args.hops,

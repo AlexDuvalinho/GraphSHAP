@@ -1,6 +1,6 @@
 """ eval.py
 
-    Evaluation 1 of the GraphSHAP explainer - for pred class only
+    Evaluation 1 of the GraphSVX explainer - for pred class only
     Add noise features and neighbours to dataset
     Check how frequently they appear in explanations
 """
@@ -19,7 +19,7 @@ from torch_geometric.nn import GNNExplainer as GNNE
 
 from src.data import (add_noise_features, add_noise_neighbours,
                       extract_test_nodes, prepare_data)
-from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSHAP,
+from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSVX,
                             Greedy, Random)
 from src.models import GAT, GCN
 from src.plots import plot_dist
@@ -100,8 +100,8 @@ def filter_useless_features(seed,
     del log_logits
 
     # Adaptable K - top k explanations we look at for each node
-    # Depends on number of existing features considered for GraphSHAP
-    if 'GraphSHAP' in args_explainers:
+    # Depends on number of existing features considered for GraphSVX
+    if 'GraphSVX' in args_explainers:
         K = []
     else:
         K = [10]*len(node_indices)
@@ -127,8 +127,8 @@ def filter_useless_features(seed,
         j=0
         for node_idx in tqdm(node_indices, desc='explain node', leave=False):
             
-            # Explanations via GraphSHAP
-            if explainer_name == 'GraphSHAP':
+            # Explanations via GraphSVX
+            if explainer_name == 'GraphSVX':
                 coefs = explainer.explain(
                                 [node_idx],
                                 args_hops,
@@ -398,7 +398,7 @@ def filter_useless_nodes(seed,
                 coefs = explainer.coefs
 
             else:
-                # Explanations via GraphSHAP
+                # Explanations via GraphSVX
                 coefs = explainer.explain([node_idx],
                                           args_hops,
                                           args_num_samples,
@@ -576,7 +576,7 @@ def eval_shap(seed,
               args_fullempty,
               args_S):
     """
-    Compares SHAP and GraphSHAP on graph based datasets
+    Compares SHAP and GraphSVX on graph based datasets
     Check if they agree on features'contribution towards prediction for several test samples
     """
 
@@ -610,10 +610,10 @@ def eval_shap(seed,
     for node_idx in tqdm(node_indices, desc='explain node', leave=False):
 
         # Define explainers we would like to compare
-        graphshap = GraphSHAP(data, model, args_gpu)
+        graphshap = GraphSVX(data, model, args_gpu)
         shap = SHAP(data, model, args_gpu)
 
-        # Explanations via GraphSHAP
+        # Explanations via GraphSVX
         graphshap_coefs = graphshap.explain([node_idx],
                                   args_hops,
                                   args_num_samples,
@@ -644,7 +644,7 @@ def eval_shap(seed,
         # Proportional contribution
         prop_contrib_diff.append(np.abs( graphshap_coefs.sum(
         ) / np.abs(graphshap_coefs).sum() - shap_coefs.sum() / np.abs(shap_coefs).sum()))
-        #print('GraphSHAP proportional contribution to pred: {:.2f}'.format(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() ))
+        #print('GraphSVX proportional contribution to pred: {:.2f}'.format(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() ))
         #print('SHAP proportional contribution to pred: {:.2f}'.format(shap_coefs.sum() / np.abs(shap_coefs).sum() ))
 
         # Important features

@@ -23,14 +23,12 @@ def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_pa
     if not any(noise_feats):  # handle special case where noise_feats=0
         noise_feats[0] = 0.25
 
-    if label=='GraphSHAP':
-        label = 'GraphSVX'
-
     # plt.switch_backend("agg")
     sns.set_style('darkgrid')
-    sns.set(font_scale=1.3)
+    #sns.set_context("talk")
     ax = sns.distplot(noise_feats, hist=False, kde=True,
                       kde_kws={'label': label}, color=color)
+    sns.set(font_scale=1.2)  # , rc={"lines.linewidth": 2})
     plt.xlim(-3, 8)
     plt.ylim(ymin=0.0, ymax=ymax)
 

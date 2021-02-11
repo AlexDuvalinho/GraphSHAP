@@ -1,6 +1,6 @@
 """ script_eval.py
 
-    Evaluation and benchmark of GraphSHAP explainer
+    Evaluation and benchmark of GraphSVX explainer
 """
 
 import argparse
@@ -28,11 +28,11 @@ def build_arguments():
                         help="Name of the dataset among Cora, PubMed, Amazon, PPI")
     parser.add_argument("--seed", type=int,
                         help="fix random state")
-    parser.add_argument("--explainers", type=list, default=['GraphSHAP', 'GNNExplainer', 'GraphLIME',
+    parser.add_argument("--explainers", type=list, default=['GraphSVX', 'GNNExplainer', 'GraphLIME',
                                                             'LIME', 'SHAP', 'Greedy'],
-                        help="Name of the benchmarked explainers among GraphSHAP, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
-    parser.add_argument("--node_explainers", type=list, default=['GraphSHAP', 'Greedy', 'GNNExplainer'],
-                        help="Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSHAP")
+                        help="Name of the benchmarked explainers among GraphSVX, SHAP, LIME, GraphLIME, Greedy and GNNExplainer")
+    parser.add_argument("--node_explainers", type=list, default=['GraphSVX', 'Greedy', 'GNNExplainer'],
+                        help="Name of the benchmarked explainers among Greedy, GNNExplainer and GraphSVX")
     parser.add_argument("--hops", type=int,
                         help='k of k-hops neighbours considered for the node of interest')
     parser.add_argument("--num_samples", type=int,
@@ -72,21 +72,21 @@ def build_arguments():
 
 
     parser.set_defaults(
-        model='GAT',
-        dataset='Cora',
-        seed=0,
-        explainers=['GraphSHAP','GNNExplainer', 'GraphLIME', 'LIME', 'SHAP'],
-        node_explainers=['GraphSHAP', 'GNNExplainer', 'Greedy'],
+        model='GCN',
+        dataset='PubMed',
+        seed=10,
+        explainers=['GraphSVX','GNNExplainer', 'GraphLIME', 'LIME', 'SHAP'],
+        node_explainers=['GraphSVX', 'GNNExplainer', 'Greedy'],
         hops=2,
-        num_samples=1000,
+        num_samples=1,
         test_samples=20,
         K=0.10,
         prop_noise_feat=0.20,
-        prop_noise_nodes=0.10,
+        prop_noise_nodes=0.20,
         connectedness='medium',
         multiclass=False,
         fullempty=None,
-        S=3,
+        S=4,
         hv='compute_pred_subgraph',
         feat='Null',
         coal='Smarter',
@@ -153,7 +153,7 @@ def main():
                 #args.regu = 0
 
             # Neighbours
-            """
+            
             filter_useless_nodes(args.seed,
                                 args.model,
                                 args.dataset,
@@ -175,7 +175,7 @@ def main():
                                 args.gpu,
                                 args.fullempty,
                                 args.S)
-            """
+            
             # Only study features
             #if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
                 #args.regu = 1
