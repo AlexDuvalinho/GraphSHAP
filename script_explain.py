@@ -50,17 +50,17 @@ def build_arguments():
                         help='Max size of coalitions sampled in priority and treated specifically')
 
     parser.set_defaults(
-        model='GAT',
+        model='GCN',
         dataset='Cora',
         seed=10,
         explainer='GraphSVX',
-        node_indexes=[90],
+        node_indexes=[100],
         hops=2,
-        num_samples=300,
+        num_samples=200,
         fullempty=None, 
         S=3,
         hv='compute_pred',
-        feat='Expectation',
+        feat='Null',
         coal='Smarter',
         g='WLR_sklearn',
         multiclass=False,
