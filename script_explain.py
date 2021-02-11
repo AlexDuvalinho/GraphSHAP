@@ -1,4 +1,3 @@
-# Use files in src folder
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSVX,
                             Greedy)
 from src.data import prepare_data
@@ -19,7 +18,7 @@ def build_arguments():
     parser.add_argument("--model", type=str,
                         help="Name of the GNN: GCN or GAT")
     parser.add_argument("--dataset", type=str,
-                        help="Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
+                        help="Name of the dataset among Cora or PubMed")
     parser.add_argument("--explainer", type=str,
                         help="Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
     parser.add_argument("--seed", type=int)
@@ -61,7 +60,7 @@ def build_arguments():
         fullempty=None, 
         S=3,
         hv='compute_pred',
-        feat='Null',
+        feat='Expectation',
         coal='Smarter',
         g='WLR_sklearn',
         multiclass=False,
@@ -72,12 +71,10 @@ def build_arguments():
 
     return parser.parse_args()
 
-# args_hv: compute_pred', 'compute_pred_subgraph', 'basic_default', 'graph_classification', 'neutral'
-# args_feat: 'All', 'Expectation', 'Null', 'Random'
-# args_coal: 'Smarter', 'Smart', 'Random', 'All', 'SmarterSeparate', 'SmarterSoftRegu'
-# args_g: 'WLR', WLS, 'WLR_sklearn', 'WLR_Lasso'
-# args_regu: 'None', integer in [0,1] (1 for feat only)
-# args_fullempty = None or True 
+# args_hv: compute_pred', 'basic_default', 'neutral', 'graph_classification', 'compute_pred_subgraph'
+# args_feat: 'All', 'Expectation', 'Null'
+# args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
+# args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
 def fix_seed(seed):
     random.seed(seed)
@@ -91,8 +88,6 @@ def main():
 
     args = build_arguments()
     fix_seed(args.seed)
-
-    #args.node_indexes = list(range(0, 20))
 
     # Load the dataset
     data = prepare_data(args.dataset, args.seed)
@@ -124,50 +119,6 @@ def main():
                                      args.g,
                                      args.regu,
                                      True)
-
-    print('number samples: ' ,len(explanations))
-    print('dim expl:' , explanations[0].shape)
-
-
-
-    # TEST 
-    # Load the model
-    args.model = 'GCN'
-    model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
-    model = torch.load(model_path)
-
-    # Evaluate the model - test set
-    model.eval()
-    with torch.no_grad():
-        log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
-    test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
-    print('Test accuracy is {:.4f}'.format(test_acc))
-    del log_logits, model_path, test_acc
-
-    # Explain it with GraphSVX
-    explainer = eval(args.explainer)(data, model, args.gpu)
-    explanations_bis = explainer.explain(args.node_indexes,
-                                     args.hops,
-                                     args.num_samples,
-                                     args.info,
-                                     args.multiclass,
-                                     args.fullempty,
-                                     args.S,
-                                     args.hv,
-                                     args.feat,
-                                     args.coal,
-                                     args.g,
-                                     args.regu,
-                                     True)
-
-    print(np.sum(np.abs(explanations[0] - explanations_bis[0])))
-
-    for expl in explanations:
-        if args.multiclass:
-            print('g(x_): ', sum(expl[:,3]))
-        else:
-            print('g(x_): ', sum(expl))
-
 
 if __name__ == "__main__":
     main()

@@ -6,9 +6,6 @@ COLOURS = ['g', 'blue', 'r', 'c', 'm', 'k']
 # Input dimension of different datasets (features)
 INPUT_DIM = {'Cora': 1433,
              'PubMed': 500,
-             'Amazon': 745,
-             'PPI': 50,
-             'Reddit': 602,
              'syn': 10}
 
 # Hyperparameters for eval1 pipeline 
@@ -18,10 +15,6 @@ EVAL1_Cora = {'args_p': 0.013,
 
 EVAL1_PubMed = {'args_p': 0.1,
                 'args_c': 0.0005,
-                'args_binary': False}
-
-EVAL1_Amazon = {'args_p': 0.34,
-                'args_c': 0.09,
                 'args_binary': False}
 
 Cora_class_distrib = [0.135, 0.075, 0.158, 0.300, 0.158,
@@ -53,7 +46,6 @@ params_Cora_GAT = {
     'wd': 5e-4
 }
 
-
 # PubMed - GCN
 hparams_PubMed_GCN = hparams_Cora_GCN
 params_PubMed_GCN = {
@@ -74,47 +66,7 @@ params_PubMed_GAT = {
     'lr': 0.005,
     'wd': 5e-4
 }
-# suggested n_heads = [8,8] with more epochs, but not necessary and better in this case
 
-
-# Amazon - GCN
-hparams_Amazon_GCN = {
-    'hidden_dim': [32],
-    'dropout': 0.5
-}
-
-params_Amazon_GCN = params_PubMed_GCN
-
-# Amazon - GAT
-hparams_Amazon_GAT = hparams_PubMed_GAT
-params_Amazon_GAT = params_PubMed_GAT
-
-
-# PPI - GCN
-hparams_PPI_GCN = {
-    'hidden_dim': [32, 16],
-    'dropout': 0.1
-}
-
-params_PPI_GCN = {
-    'num_epochs': 20,
-    'lr': 0.01,
-    'wd': 5e-4
-}
-
-# PPI - GAT
-# Change loss function as well to BCEWithLogits
-hparams_PPI_GAT = {
-    'hidden_dim': [256, 256],
-    'dropout': 0,
-    'n_heads': [4, 4, 6]
-}
-
-params_PPI_GAT = {
-    'num_epochs': 2000,
-    'lr': 0.005,
-    'wd': 0
-}
 
 
 

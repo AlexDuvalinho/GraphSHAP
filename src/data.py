@@ -48,25 +48,6 @@ def prepare_data(dataset, seed):
 			data.y.numpy(), seed=seed)
 		# Amazon: 4896 train, 1224 val, 1530 test
 
-	elif dataset == 'Reddit':
-		path = os.path.join(dirname, 'data', 'Reedit')
-		data = Reddit(path)[0]
-		data.train_mask, data.val_mask, data.test_mask = split_function(
-			data.y.numpy(), seed=seed)
-
-	elif dataset == 'PPI':
-		path = os.path.join(dirname, 'data', 'PPI')
-		data = ppi_prepoc(path, seed)
-		data.x = data.graphs[0].x
-		data.num_classes = data.graphs[0].y.size(1)
-		for df in data.graphs:
-			df.num_classes = data.num_classes
-
-	# Info about training set
-	if dataset != 'PPI':
-		print('Train mask is of size: ',
-			  data.train_mask[data.train_mask == True].shape)
-
 	return data
 
 
@@ -79,7 +60,6 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
 		val_fraction (int): validation set proportion
 		test_fraction (int): test set proportion
 		seed (int): seed value
-
 
 	Returns:
 		[torch.tensors]: train, validation and test masks - boolean values
@@ -106,54 +86,6 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
 
 def split_function(y, args_train_ratio=0.6, seed=10):
 	return _get_train_val_test_masks(y.shape[0], y, (1-args_train_ratio)/2, (1-args_train_ratio), seed=seed)
-
-
-def ppi_prepoc(dirname, seed):
-	"""Special processing for PPI dataset
-
-	Args:
-			dirname (str): name where data should be stored
-			seed (int): seed number 
-
-	Returns:
-			[type]: all graphs contained in PPI dataset
-	"""
-	# 20 protein graphs - some set as validation, some as train, some as test.
-	# Need to create the relevant masks for each graph
-	data = SimpleNamespace()
-	data.graphs = []
-	for split in ['train', 'val', 'test']:
-		split_data = PPI(root=dirname, split=split,
-						 pre_transform=T.NormalizeFeatures())
-		x_idxs = split_data.slices['x'].numpy()
-		edge_idxs = split_data.slices['edge_index'].numpy()
-		split_data = split_data.data
-		for x_start, x_end, e_start, e_end in zip(x_idxs, x_idxs[1:], edge_idxs, edge_idxs[1:]):
-			graph = Data(split_data.x[x_start:x_end], split_data.edge_index[:, e_start:e_end],
-						 y=split_data.y[x_start:x_end])
-			graph.num_nodes = int(x_end - x_start)
-			graph.split = split
-			all_true = torch.ones(graph.num_nodes).bool()
-			all_false = torch.zeros(graph.num_nodes).bool()
-			graph.train_mask = all_true if split == 'train' else all_false
-			graph.val_mask = all_true if split == 'val' else all_false
-			graph.test_mask = all_true if split == 'test' else all_false
-			data.graphs.append(graph)
-	if seed != 0:
-		temp_random = random.Random(seed)
-		val_graphs = temp_random.sample(range(len(data.graphs)), 2)
-		test_candidates = [graph_idx for graph_idx in range(
-			len(data.graphs)) if graph_idx not in val_graphs]
-		test_graphs = temp_random.sample(test_candidates, 2)
-		for graph_idx, graph in enumerate(data.graphs):
-			all_true = torch.ones(graph.num_nodes).bool()
-			all_false = torch.zeros(graph.num_nodes).bool()
-			graph.split = 'test' if graph_idx in test_graphs else 'val' if graph_idx in val_graphs else 'train'
-			graph.train_mask = all_true if graph.split == 'train' else all_false
-			graph.val_mask = all_true if graph.split == 'val' else all_false
-			graph.test_mask = all_true if graph.split == 'test' else all_false
-
-	return data
 
 
 def add_noise_features(data, num_noise, binary=False, p=0.5):
@@ -190,7 +122,7 @@ def add_noise_features(data, num_noise, binary=False, p=0.5):
 
 
 def add_noise_neighbours(data, num_noise, node_indices, binary=False, p=0.5, connectedness='medium', c=0.001):
-	"""Add new noisy neighbours
+	"""Add noisy nodes to original dataset
 
 	Args:
 		data (torch_geometric.Data): downloaded dataset 

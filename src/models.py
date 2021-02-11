@@ -83,6 +83,9 @@ class GAT(nn.Module):
 
 
 class LinearRegressionModel(nn.Module):
+    """Construct a simple linear regression
+
+    """
 
     def __init__(self, input_dim, output_dim):
         super(LinearRegressionModel, self).__init__()

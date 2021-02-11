@@ -73,13 +73,13 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='PubMed',
+        dataset='Cora',
         seed=10,
         explainers=['GraphSVX','GNNExplainer', 'GraphLIME', 'LIME', 'SHAP'],
         node_explainers=['GraphSVX', 'GNNExplainer', 'Greedy'],
         hops=2,
-        num_samples=1,
-        test_samples=20,
+        num_samples=3000,
+        test_samples=50,
         K=0.10,
         prop_noise_feat=0.20,
         prop_noise_nodes=0.20,
@@ -87,20 +87,19 @@ def build_arguments():
         multiclass=False,
         fullempty=None,
         S=4,
-        hv='compute_pred_subgraph',
-        feat='Null',
-        coal='Smarter',
+        hv='compute_pred',
+        feat='Expectation',
+        coal='SmarterSeparate',
         g='WLR_sklearn',
         regu=None,
         info=False,
         gpu=False,
         evalshap=False
     )
-    # args_hv: 'compute_pred', 'compute_pred_subgraph', 'basic_default', 'neutral', 'compute_pred_regu'
-    # args_feat: 'All', 'Expectation', 'Null', 'Random'
-    # args_coal: 'Smarter', 'Smart', 'Random', 'All', 'SmarterSeparate', 'SmarterSoftRegu
-    # args_g: 'WLR', WLS, 'WLR_sklearn', 'WLR_Lasso'
-    # args_regu: 'None', integer in [0,1] (1 for feat only)
+    # args_hv: compute_pred', 'basic_default', 'neutral', 'compute_pred_subgraph', 'graph_classification'
+    # args_feat: 'All', 'Expectation', 'Null'
+    # args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
+    # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
     args = parser.parse_args()
     return args
@@ -122,51 +121,45 @@ def main():
     
     start_time = time.time()
 
-    ## List specific sets of hyperparameters values
-    # node_indices = [2549,2664,2250,1881,2467,2663,1830,1938,1719,1828] #2367,2127,1899,2652,2100,2125
-    # args_num_samples = [1000, 3000, 5000]
-    # args_model = ['GCN', 'GAT']
-    # args_seed = [0, 10, 100]
-    # args_dataset = ['Cora', 'PubMed', 'Amazon']
-    # args_hv = ['compute_pred'] #, 'basic_default', 'basic_default_2hop', 'neutral']
-    # args_feat = ['All', 'Expectation', 'Null']
-    # args_coal = ['Smarter', 'Smart', 'All', 'SmarterSeparate']
-    # args_g = ['WLR', 'WLS', 'WLR_sklearn']
-    # args_regu= ['None', 0, 1]
-    # args_K = [0.1,0.2,0.05]
-    # args_prop_noise_nodes = [0.1, 0.2, 0.05]
-    # args_prop_noise_feat = [0.1, 0.2, 0.05]
 
-    # Create combinations of above hyperparameters 
-    # l = [args_K, args_prop_noise_nodes]
-    # flat_list = list(product(*l))
-    
-    # for (args.K, args.prop_noise_nodes) in flat_list:
-    #     args.prop_noise_feat = args_prop_noise_nodes
-    
-    for _ in [1]: 
-
-        if args.multiclass == False:
-
-            # Only study neighbours 
-            #if args.coal == 'SmarterSoftRegu':
-                #args.regu = 0
-
-            # Neighbours
-            
-            filter_useless_nodes(args.seed,
+    if args.multiclass == False:
+        
+        # Noisy nodes
+        filter_useless_nodes(args.seed,
+                            args.model,
+                            args.dataset,
+                            args.node_explainers,
+                            args.hops,
+                            args.num_samples,
+                            args.test_samples,
+                            args.K,
+                            args.prop_noise_nodes,
+                            args.connectedness,
+                            node_indices,
+                            args.info,
+                            args.hv,
+                            args.feat,
+                            args.coal,
+                            args.g,
+                            args.multiclass,
+                            args.regu,
+                            args.gpu,
+                            args.fullempty,
+                            args.S)
+        
+        # Noisy features
+        filter_useless_features(args.seed,
                                 args.model,
                                 args.dataset,
-                                args.node_explainers,
+                                args.explainers,
                                 args.hops,
                                 args.num_samples,
                                 args.test_samples,
                                 args.K,
-                                args.prop_noise_nodes,
-                                args.connectedness,
+                                args.prop_noise_feat,
                                 node_indices,
                                 args.info,
-                                args.hv, #node_specific
+                                args.hv,
                                 args.feat,
                                 args.coal,
                                 args.g,
@@ -175,102 +168,76 @@ def main():
                                 args.gpu,
                                 args.fullempty,
                                 args.S)
-            
-            # Only study features
-            #if args.coal == 'SmarterRegu' or args.coal == 'SmarterSoftRegu':
-                #args.regu = 1
-
-            # Features
-            filter_useless_features(args.seed,
-                                    args.model,
-                                    args.dataset,
-                                    args.explainers,
-                                    args.hops,
-                                    args.num_samples,
-                                    args.test_samples,
-                                    args.K,
-                                    args.prop_noise_feat,
-                                    node_indices,
-                                    args.info,
-                                    args.hv,
-                                    args.feat,
-                                    args.coal,
-                                    args.g,
-                                    args.multiclass,
-                                    args.regu,
-                                    args.gpu,
-                                    args.fullempty,
-                                    args.S)
-            
-        else:
-            # Neighbours
-            filter_useless_nodes_multiclass(args.seed,
-                                            args.model,
-                                            args.dataset,
-                                            args.node_explainers,
-                                            args.hops,
-                                            args.num_samples,
-                                            args.test_samples,
-                                            args.prop_noise_nodes,
-                                            args.connectedness,
-                                            node_indices,
-                                            5,
-                                            args.info,
-                                            args.hv,
-                                            args.feat,
-                                            args.coal,
-                                            args.g,
-                                            args.multiclass,
-                                            args.regu,
-                                            args.gpu,
-                                            args.fullempty,
-                                            args.S)
-
-            # Node features
-            filter_useless_features_multiclass(args.seed,
-                                            args.model,
-                                            args.dataset,
-                                            args.explainers,
-                                            args.hops,
-                                            args.num_samples,
-                                            args.test_samples,
-                                            args.prop_noise_feat,
-                                            node_indices,
-                                            5,
-                                            args.info,
-                                            args.hv,
-                                            args.feat,
-                                            args.coal,
-                                            args.g,
-                                            args.multiclass,
-                                            args.regu,
-                                            args.gpu,
-                                            args.fullempty,
-                                            args.S)
-
         
-        if args.evalshap:
-            eval_shap(args.seed,
-                      args.dataset,
-                      args.model,
-                      args.test_samples,
-                      args.hops,
-                      args.K,
-                      args.num_samples,
-                      node_indices,
-                      args.info,
-                      args.hv,
-                      args.feat,
-                      args.coal,
-                      args.g,
-                      args.multiclass,
-                      args.regu,
-                      args.gpu,
-                      args.fullempty,
-                      args.S)
+    else:
+        # Neighbours
+        filter_useless_nodes_multiclass(args.seed,
+                                        args.model,
+                                        args.dataset,
+                                        args.node_explainers,
+                                        args.hops,
+                                        args.num_samples,
+                                        args.test_samples,
+                                        args.prop_noise_nodes,
+                                        args.connectedness,
+                                        node_indices,
+                                        5,
+                                        args.info,
+                                        args.hv,
+                                        args.feat,
+                                        args.coal,
+                                        args.g,
+                                        args.multiclass,
+                                        args.regu,
+                                        args.gpu,
+                                        args.fullempty,
+                                        args.S)
 
-        end_time = time.time()
-        print('Time: ', end_time - start_time)
+        # Node features
+        filter_useless_features_multiclass(args.seed,
+                                        args.model,
+                                        args.dataset,
+                                        args.explainers,
+                                        args.hops,
+                                        args.num_samples,
+                                        args.test_samples,
+                                        args.prop_noise_feat,
+                                        node_indices,
+                                        5,
+                                        args.info,
+                                        args.hv,
+                                        args.feat,
+                                        args.coal,
+                                        args.g,
+                                        args.multiclass,
+                                        args.regu,
+                                        args.gpu,
+                                        args.fullempty,
+                                        args.S)
+
+    
+    if args.evalshap:
+        eval_shap(args.seed,
+                    args.dataset,
+                    args.model,
+                    args.test_samples,
+                    args.hops,
+                    args.K,
+                    args.num_samples,
+                    node_indices,
+                    args.info,
+                    args.hv,
+                    args.feat,
+                    args.coal,
+                    args.g,
+                    args.multiclass,
+                    args.regu,
+                    args.gpu,
+                    args.fullempty,
+                    args.S)
+
+    end_time = time.time()
+    print('Time: ', end_time - start_time)
 
 if __name__ == "__main__":
     main()

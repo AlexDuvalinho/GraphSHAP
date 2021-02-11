@@ -520,8 +520,7 @@ def noise_nodes_for_random(data, model, K, node_indices, total_num_noisy_nei, to
 
 
 def study_attention_weights(data, model, args_test_samples):
-    """
-        Studies the attention weights of the GAT model
+    """ Studies the attention weights of the GAT model
     """
     _, alpha, alpha_bis = model(data.x, data.edge_index, att=True)
 

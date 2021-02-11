@@ -1,11 +1,10 @@
 """ script_train.py
 
 	Train, evaluate and save the desired GNN model 
-	on this given dataset. 
+	on the given dataset. 
 """
 
 from src.utils import *
-from src.train_ppi import main_ppi
 from src.train import train_and_val, accuracy
 from src.models import GAT, GCN
 from src.data import prepare_data
@@ -33,8 +32,8 @@ def build_arguments():
                         help="True to save the trained model obtained")
 
     parser.set_defaults(
-        model='GAT',
-        dataset='Cora',
+        model='GCN',
+        dataset='PubMed',
         seed=10,
         save=False
     )
@@ -58,36 +57,30 @@ def main():
     # Load the dataset
     data = prepare_data(args.dataset, args.seed)
 
-    # Train the model - specific case for PPI dataset
-    if args.dataset == "PPI":
-        model = main_ppi(type=args.model)
-        # test_ppi shows how to compute predictions (model(), then positive values => predict this class)
+    # Retrieve the model and training hyperparameters depending the data/model given as input
+    hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
+    param = ''.join(['params_', args.dataset, '_', args.model])
 
+    # Define the model
+    if args.model == 'GCN':
+        model = GCN(input_dim=data.x.size(
+            1), output_dim=data.num_classes, **eval(hyperparam))
     else:
-        # Retrieve the model and training hyperparameters depending the data/model given as input
-        hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
-        param = ''.join(['params_', args.dataset, '_', args.model])
+        model = GAT(input_dim=data.x.size(
+            1), output_dim=data.num_classes,  **eval(hyperparam))
 
-        # Define the model
-        if args.model == 'GCN':
-            model = GCN(input_dim=data.x.size(
-                1), output_dim=data.num_classes, **eval(hyperparam))
-        else:
-            model = GAT(input_dim=data.x.size(
-                1), output_dim=data.num_classes,  **eval(hyperparam))
+    # Train the model
+    train_and_val(model, data, **eval(param))
 
-        # Train the model
-        train_and_val(model, data, **eval(param))
+    # Compute predictions
+    model.eval()
+    with torch.no_grad():
+        log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
+    probas = log_logits.exp()  # combine in 1 line + change accuracy
 
-        # Compute predictions
-        model.eval()
-        with torch.no_grad():
-            log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
-        probas = log_logits.exp()  # combine in 1 line + change accuracy
-
-        # Evaluate the model - test set
-        test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
-        print('Test accuracy is {:.4f}'.format(test_acc))
+    # Evaluate the model - test set
+    test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+    print('Test accuracy is {:.4f}'.format(test_acc))
 
     # Save model
     if args.save:
