@@ -13,6 +13,12 @@ import random
 from types import SimpleNamespace
 import warnings
 
+import configs
+import utils.featgen as featgen
+import utils.parser_utils as parser_utils
+import utils.io_utils as io_utils
+import src.gengraph as gengraph
+
 warnings.filterwarnings('ignore')
 
 
@@ -47,6 +53,10 @@ def prepare_data(dataset, seed):
 		data.train_mask, data.val_mask, data.test_mask = split_function(
 			data.y.numpy(), seed=seed)
 		# Amazon: 4896 train, 1224 val, 1530 test
+	
+	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']:
+		data = synthetic_data(
+			dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
 
 	return data
 
@@ -216,3 +226,51 @@ def extract_test_nodes(data, num_samples, seed):
 	node_indices = np.random.choice(test_indices, num_samples, replace=False).tolist()
 
 	return node_indices
+
+
+def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.6):
+	"""
+	Create synthetic data, similarly to what was done in GNNExplainer
+	Pipeline was adapted so as to fit ours. 
+	"""
+	# Define path where dataset should be saved
+	data_path = "data/{}.pth".format(dataset)
+
+	# If already created, do not recreate
+	if os.path.exists(data_path):
+		data = torch.load(data_path)
+
+	else:
+		# Construct graph
+		if dataset == 'syn1':
+			G, labels, name = gengraph.gen_syn1(
+				feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim)))
+		elif dataset == 'syn4':
+			G, labels, name = gengraph.gen_syn4(
+				feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)))
+		elif dataset == 'syn5':
+			G, labels, name = gengraph.gen_syn5(
+				feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)))
+		elif dataset == 'syn2':
+			G, labels, name = gengraph.gen_syn2()
+			args_input_dim = len(G.nodes[0]["feat"])
+
+		# Create dataset
+		data = SimpleNamespace()
+		data.edge_index, data.x, data.y = gengraph.preprocess_input_graph(
+			G, labels)
+		a = torch.randperm(data.x.shape[0])
+		# a = torch.randperm(data.x.size()[0])
+		data.y, data.x = data.y[a], data.x[a, :]
+		data.num_classes = max(labels) + 1
+		data.num_features = args_input_dim
+		data.num_nodes = G.number_of_nodes()
+
+		# Train/test split only for nodes
+		data.train_mask, data.val_mask, data.test_mask = split_function(
+			data.y.numpy(), args_train_ratio)
+
+		# Save data
+		torch.save(data, data_path)
+
+	return data

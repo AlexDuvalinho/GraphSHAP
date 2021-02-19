@@ -68,5 +68,19 @@ params_PubMed_GAT = {
 }
 
 
+### Synthethic datasets
+
+# Model structure hyperparameters for syn dataset, GCN model
+hparams_syn1_GCN = {
+    'hidden_dim': [20, 20, 20],
+  		'dropout': 0
+}
+
+# Training hyperparameters for syn dataset, GCN model
+params_syn1_GCN = {
+	'num_epochs': 1000,
+	'lr': 0.001,
+	'wd': 5e-3
+}
 
 
