@@ -134,8 +134,7 @@ class GCNNet(torch.nn.Module):
         for conv in self.convs:
             torch.nn.init.xavier_uniform_(conv.weight.data)  # .data
 
-    def forward(self, data):
-        x, edge_index, batch = data.feat, data.edge_index, data.batch
+    def forward(self, x, edge_index):
         x_all = []
 
         for i in range(self.num_layers):

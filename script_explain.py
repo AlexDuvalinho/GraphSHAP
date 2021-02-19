@@ -50,16 +50,16 @@ def build_arguments():
                         help='Max size of coalitions sampled in priority and treated specifically')
 
     parser.set_defaults(
-        model='GAT',
-        dataset='Cora',
+        model='GCN',
+        dataset='syn1',
         seed=10,
         explainer='GraphSVX',
-        node_indexes=[90],
+        node_indexes=[500],
         hops=2,
         num_samples=300,
         fullempty=None, 
         S=3,
-        hv='compute_pred',
+        hv='compute_pred_subgraph',
         feat='Expectation',
         coal='Smarter',
         g='WLR_sklearn',
@@ -99,7 +99,7 @@ def main():
     # Evaluate the model - test set
     model.eval()
     with torch.no_grad():
-        log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
+        log_logits = model(data.x, data.edge_index)  # [2708, 7]
     test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
     print('Test accuracy is {:.4f}'.format(test_acc))
     del log_logits, model_path, test_acc

@@ -5,15 +5,18 @@
 """
 
 from src.utils import *
-from src.train import train_and_val, accuracy
-from src.models import GAT, GCN
+from src.train import train_and_val, accuracy, train_syn
+from src.models import GAT, GCN, GCNNet
 from src.data import prepare_data
 import argparse
 import random
 import torch
+import configs
 
 import numpy as np
+import os 
 import warnings
+
 
 warnings.filterwarnings("ignore")
 
@@ -33,7 +36,7 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='PubMed',
+        dataset='syn1',
         seed=10,
         save=False
     )
@@ -52,6 +55,7 @@ def fix_seed(seed):
 def main():
 
     args = build_arguments()
+    prog_args = configs.arg_parse()
     fix_seed(args.seed)
 
     # Load the dataset
@@ -61,17 +65,16 @@ def main():
     hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
     param = ''.join(['params_', args.dataset, '_', args.model])
 
-    # Define the model
-    if args.model == 'GCN':
-        model = GCN(input_dim=data.x.size(
+    # Define and train the model
+    if args.dataset in ['Cora', 'PubMed']:
+        model = eval(args.model)(input_dim=data.x.size(
             1), output_dim=data.num_classes, **eval(hyperparam))
-    else:
-        model = GAT(input_dim=data.x.size(
-            1), output_dim=data.num_classes,  **eval(hyperparam))
-
-    # Train the model
-    train_and_val(model, data, **eval(param))
-
+        train_and_val(model, data, **eval(param))
+    else: 
+        model = GCNNet(prog_args.input_dim, prog_args.hidden_dim,
+               data.num_classes, prog_args.num_gc_layers, args=prog_args)
+        train_syn(data, model, prog_args)
+    
     # Compute predictions
     model.eval()
     with torch.no_grad():
@@ -83,10 +86,9 @@ def main():
     print('Test accuracy is {:.4f}'.format(test_acc))
 
     # Save model
-    if args.save:
-        model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
+    model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
+    if not os.path.exists(model_path):
         torch.save(model, model_path)
-
 
 if __name__ == "__main__":
     main()

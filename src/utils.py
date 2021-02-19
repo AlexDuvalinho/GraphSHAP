@@ -82,5 +82,3 @@ params_syn1_GCN = {
 	'lr': 0.001,
 	'wd': 5e-3
 }
-
-

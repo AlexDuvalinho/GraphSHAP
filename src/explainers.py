@@ -26,7 +26,7 @@ from torch_geometric.nn import MessagePassing
 
 from src.models import LinearRegressionModel
 from src.plots import (denoise_graph, k_hop_subgraph, log_graph,
-                       visualize_subgraph)
+                       visualize_subgraph, custom_to_networkx)
 
 warnings.filterwarnings("ignore")
 
@@ -888,7 +888,6 @@ class GraphSVX():
     ################################
     # Graph generator + compute f(z)
     ################################
-
     def compute_pred_subgraph(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
@@ -902,7 +901,7 @@ class GraphSVX():
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
         # Create networkx graph
-        G = torch_geometric.utils.to_networkx(self.data)
+        G = custom_to_networkx(self.data)
 
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard
@@ -1030,7 +1029,7 @@ class GraphSVX():
                 (tensor): f(z) - probability of belonging to each target classes, for all samples z
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
-        G = torch_geometric.utils.to_networkx(self.data)
+        G = custom_to_networkx(self.data)
 
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard
@@ -1384,7 +1383,7 @@ class GraphSVX():
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
         # To networkx
-        G = torch_geometric.utils.to_networkx(self.data)
+        G = custom_to_networkx(self.data)
 
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard

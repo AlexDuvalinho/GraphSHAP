@@ -257,14 +257,15 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.6):
 
 		# Create dataset
 		data = SimpleNamespace()
-		data.edge_index, data.x, data.y = gengraph.preprocess_input_graph(
+		data.x, data.edge_index, data.y = gengraph.preprocess_input_graph(
 			G, labels)
-		a = torch.randperm(data.x.shape[0])
+		#a = torch.randperm(data.x.shape[0])
 		# a = torch.randperm(data.x.size()[0])
-		data.y, data.x = data.y[a], data.x[a, :]
+		#data.y, data.x = data.y[a], data.x[a, :]
 		data.num_classes = max(labels) + 1
 		data.num_features = args_input_dim
 		data.num_nodes = G.number_of_nodes()
+		data.name = dataset
 
 		# Train/test split only for nodes
 		data.train_mask, data.val_mask, data.test_mask = split_function(

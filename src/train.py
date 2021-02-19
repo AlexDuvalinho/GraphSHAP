@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.metrics import f1_score
 from tqdm import tqdm
+import os
 
 
 def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
@@ -59,10 +60,7 @@ def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
                                                                                train_acc.item(),
                                                                                val_loss.item(),
                                                                                val_acc.item())
-
-            #model_path = 'model.pth'
-            #torch.save(model.state_dict(), model_path)
-
+        
             if verbose:
                 tqdm.write(log)
 
@@ -72,7 +70,6 @@ def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
 
     print('-------------------------------------------------')
 
-    # model.load_state_dict(torch.load(model_path))
 
 
 def train_on_epoch(model, data, optimizer):
@@ -135,3 +132,48 @@ def accuracy(output, labels):
 
     # Return accuracy metric
     return correct / len(labels)
+
+
+def train_syn(data, model, args):
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr,
+                           weight_decay=args.weight_decay)
+    for epoch in range(args.num_epochs):
+        total_loss = 0
+        model.train()
+       
+        # print ('batch:', batch.feat)
+        opt.zero_grad()
+        pred = model(data.x, data.edge_index)
+
+        pred = pred[data.train_mask]
+        label = data.y[data.train_mask]
+        loss = model.loss(pred, label)
+        nn.utils.clip_grad_norm(model.parameters(), args.clip)
+        loss.backward()
+        opt.step()
+        total_loss += loss.item() * 1
+        
+        if epoch % 10 == 0:
+            test_acc = test(data, model, args, data.y, data.test_mask)
+            print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
+                epoch, total_loss, test_acc))
+    total_loss = total_loss / data.x.shape[0]
+
+def test(data, model, args, labels, test_mask):
+    model.eval()
+
+    train_ratio = args.train_ratio
+    correct = 0
+    
+    with torch.no_grad():
+        pred = model(data.x, data.edge_index)
+        pred = pred.argmax(dim=1)
+
+        # node classification: only evaluate on nodes in test set
+        pred = pred[test_mask]
+        label = labels[test_mask]
+
+        correct += pred.eq(label).sum().item()
+
+    total = (test_mask == True).nonzero().shape[0]
+    return correct / total
