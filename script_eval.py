@@ -89,7 +89,7 @@ def build_arguments():
         S=4,
         hv='compute_pred',
         feat='Expectation',
-        coal='SmarterSeparate',
+        coal='Smarter',
         g='WLR_sklearn',
         regu=None,
         info=False,
