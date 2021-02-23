@@ -18,6 +18,8 @@ import utils.featgen as featgen
 import utils.parser_utils as parser_utils
 import utils.io_utils as io_utils
 import src.gengraph as gengraph
+import pickle as pkl
+from utils.graph_utils import get_graph_data
 
 warnings.filterwarnings('ignore')
 
@@ -54,9 +56,15 @@ def prepare_data(dataset, seed):
 			data.y.numpy(), seed=seed)
 		# Amazon: 4896 train, 1224 val, 1530 test
 	
-	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']:
+	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']: # syn6
 		data = synthetic_data(
 			dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
+	
+	elif dataset == 'syn6':
+		data = gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
+
+	elif dataset == 'Mutagenicity':
+		data = gc_data(dataset, dirname, args_input_dim=14, args_train_ratio=0.8)
 
 	return data
 
@@ -228,7 +236,7 @@ def extract_test_nodes(data, num_samples, seed):
 	return node_indices
 
 
-def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.6):
+def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
 	"""
 	Create synthetic data, similarly to what was done in GNNExplainer
 	Pipeline was adapted so as to fit ours. 
@@ -254,14 +262,14 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.6):
 		elif dataset == 'syn2':
 			G, labels, name = gengraph.gen_syn2()
 			args_input_dim = len(G.nodes[0]["feat"])
+		# elif dataset == 'syn6':
+		# 	G, labels, name = gengraph.gen_syn6()
 
 		# Create dataset
 		data = SimpleNamespace()
 		data.x, data.edge_index, data.y = gengraph.preprocess_input_graph(
 			G, labels)
-		#a = torch.randperm(data.x.shape[0])
-		# a = torch.randperm(data.x.size()[0])
-		#data.y, data.x = data.y[a], data.x[a, :]
+		data.x = data.x.type(torch.FloatTensor)
 		data.num_classes = max(labels) + 1
 		data.num_features = args_input_dim
 		data.num_nodes = G.number_of_nodes()
@@ -275,3 +283,68 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.6):
 		torch.save(data, data_path)
 
 	return data
+
+
+def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
+	
+	# Define path where dataset should be saved
+	data_path = "data/{}.pth".format(dataset)
+
+	# If already created, do not recreate
+	if os.path.exists(data_path):
+		data = torch.load(data_path)
+	else:
+		if dataset == 'syn6':
+			#G, labels, name = gengraph.gen_syn6()
+			data = SimpleNamespace()
+			with open('data/BA-2motif.pkl', 'rb') as fin:
+				data.edge_index, data.x, data.y = pkl.load(fin)
+		else:
+			# MUTAG
+			data = SimpleNamespace()
+			with open('data/Mutagenicity.pkl', 'rb') as fin:
+				data.edge_index, data.x, data.y = pkl.load(fin)
+					
+		data.x = torch.FloatTensor(data.x)
+		data.edge_index = torch.FloatTensor(data.edge_index)
+		data.y = torch.LongTensor(data.y)
+		_, data.y = data.y.max(dim=1)
+		data.num_classes = 2
+		data.num_features = args_input_dim
+		data.num_nodes = data.edge_index.shape[1]
+		data.name = dataset
+
+		data.train_mask, data.val_mask, data.test_mask = split_function(
+						data.y, args_train_ratio)
+
+		torch.save(data, data_path)
+	return data 
+
+
+def selected_data(data, dataset):
+	"""select only mutagen graphs with NO2 and NH2
+
+	Args:
+		data ([type]): [description]
+		dataset ([type]): [description]
+
+	Returns:
+		[type]: [description]
+	"""
+	edge_lists, graph_labels, edge_label_lists, node_label_lists = \
+            get_graph_data(dataset)
+	# we only consider the mutagen graphs with NO2 and NH2.
+	selected = []
+	for gid in range(data.edge_index.shape[0]):
+			if np.argmax(data.y[gid]) == 0 and np.sum(edge_label_lists[gid]) > 0:
+				selected.append(gid)
+	print('number of mutagen graphs with NO2 and NH2', len(selected))
+
+	data.edge_index = data.edge_index[selected]
+	data.x = data.x [selected]
+	data.y = data.y[selected]
+	data.edge_lists = [edge_lists[i] for i in selected]
+	data.edge_label_lists = [edge_label_lists[i] for i in selected]
+	data.selected = selected
+	
+	return data 

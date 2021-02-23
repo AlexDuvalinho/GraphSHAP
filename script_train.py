@@ -36,7 +36,7 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='syn1',
+        dataset='syn5',
         seed=10,
         save=False
     )

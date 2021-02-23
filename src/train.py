@@ -134,28 +134,26 @@ def accuracy(output, labels):
     return correct / len(labels)
 
 
-def train_syn(data, model, args):
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr,
-                           weight_decay=args.weight_decay)
+def train_syn(data, model, args, labels, train_mask):
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr) #weight_decay=args.weight_decay)
     for epoch in range(args.num_epochs):
         total_loss = 0
         model.train()
        
-        # print ('batch:', batch.feat)
         opt.zero_grad()
         pred = model(data.x, data.edge_index)
 
-        pred = pred[data.train_mask]
-        label = data.y[data.train_mask]
+        pred = pred[train_mask]
+        label = labels[train_mask]
         loss = model.loss(pred, label)
-        nn.utils.clip_grad_norm(model.parameters(), args.clip)
+        # nn.utils.clip_grad_norm(model.parameters(), args.clip)
         loss.backward()
         opt.step()
         total_loss += loss.item() * 1
         
         if epoch % 10 == 0:
-            test_acc = test(data, model, args, data.y, data.test_mask)
-            print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
+            test_acc = test(data, model, args, labels, data.val_mask)
+            print("Epoch {}. Loss: {:.4f}. Val accuracy: {:.4f}".format(
                 epoch, total_loss, test_acc))
     total_loss = total_loss / data.x.shape[0]
 
@@ -170,10 +168,54 @@ def test(data, model, args, labels, test_mask):
         pred = pred.argmax(dim=1)
 
         # node classification: only evaluate on nodes in test set
-        pred = pred[test_mask]
-        label = labels[test_mask]
+        pred = pred[data.test_mask]
+        label = data.y[data.test_mask]
 
         correct += pred.eq(label).sum().item()
 
-    total = (test_mask == True).nonzero().shape[0]
+    total = (data.test_mask == True).nonzero().shape[0]
     return correct / total
+
+
+def train_gc(data, model, args):
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    for epoch in range(args.num_epochs):
+        model.train()
+
+        #for df in dataset: # batch
+        optimizer.zero_grad()
+        y_pred, _ = model(data.x, data.edge_index)
+
+        loss = model.loss(
+            y_pred[data.train_mask], data.y[data.train_mask])
+        loss.backward()
+        optimizer.step()
+
+        # Eval
+        if epoch % 10 == 0:
+            test_acc = test_gc(data, model, args)
+            print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
+                epoch, loss, test_acc))
+
+
+def test_gc(data, model, args):
+    model.eval()
+
+    train_ratio = args.train_ratio
+    correct = 0
+
+    with torch.no_grad():
+        pred, _ = model(data.x, data.edge_index)
+        pred = pred.argmax(dim=1)
+
+        # node classification: only evaluate on nodes in test set
+        pred = pred[data.test_mask]
+        label = data.y[data.test_mask]
+
+        correct += pred.eq(label).sum().item()
+
+    total = (data.test_mask == True).nonzero().shape[0]
+    return correct / total
+
+

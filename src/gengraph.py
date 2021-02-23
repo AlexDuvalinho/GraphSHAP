@@ -6,6 +6,7 @@ import utils.io_utils as io_utils
 from utils import featgen
 from utils import synthetic_structsim
 import torch
+import torch_geometric
 from tensorboardX import SummaryWriter
 import numpy as np
 import networkx as nx
@@ -15,6 +16,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib import pyplot as plt
 import os
 from torch_geometric.utils import from_networkx
+import pickle as pkl
 
 # Set matplotlib backend to file writing
 plt.switch_backend("agg")
@@ -157,7 +159,8 @@ def gen_syn2(nb_shapes=100, width_basis=350):
 	mu_2, sigma_2 = np.array(
             [1.0] * 2 + random_mu), np.array([0.5] * 2 + random_sigma)
 	feat_gen_G1 = featgen.GaussianFeatureGen(mu=mu_1, sigma=sigma_1)
-	feat_gen_G2 = featgen.GaussianFeatureGen(mu=mu_2, sigma=sigma_2)
+	feat_gen_G2 = featgen.GaussianFeatureGen(
+		mu=mu_2, sigma=sigma_2)
 	G1, role_id1, name = gen_syn1(feature_generator=feat_gen_G1, m=4)
 	G2, role_id2, name = gen_syn1(feature_generator=feat_gen_G2, m=4)
 	G1_size = G1.number_of_nodes()
@@ -282,4 +285,11 @@ def gen_syn5(nb_shapes=80, width_basis=8, feature_generator=None, m=3):
 	return G, role_id, name
 
 
+def gen_syn6():
+	with open('data/BA-2motif.pkl', 'rb') as fin:
+		adjs, feats, labels = pkl.load(fin)
+		
+	G = nx.Graph(adjs)
+	adj = torch_geometric.utils.dense_to_sparse(torch.tensor(adjs))
 
+	 

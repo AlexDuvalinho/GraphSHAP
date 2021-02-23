@@ -502,17 +502,16 @@ class GraphSVX():
                     'cuda' if torch.cuda.is_available() else 'cpu')
                 self.model = self.model.to(device)
                 with torch.no_grad():
-                    true_conf, true_pred = self.model(
-                        x=self.data.x.cuda(),
-                        edge_index=self.data.edge_index.cuda()).exp()[graph_index].max(dim=0)
+                    true_conf, true_pred = self.model(self.data.x.cuda(),
+                        self.data.edge_index.cuda())[0][graph_index,:].max(dim=0)
             else:
                 with torch.no_grad():
-                    true_conf, true_pred = self.model(
-                        x=self.data.x,
-                        edge_index=self.data.edge_index).exp()[graph_index].max(dim=0)
+                    true_conf, true_pred = self.model(self.data.x,
+                        self.data.edge_index)[0][graph_index,:].max(dim=0)
 
             # Remove node v index from neighbours and store their number in D
-            self.neighbours = list(range(self.data.x.shape[0]))
+            self.neighbours = list(
+                range(int(self.data.edge_index.shape[1] - np.sum(np.diag(self.data.edge_index[graph_index])))))
             D = len(self.neighbours)
 
             # Total number of features + neighbours considered for node v
@@ -1162,7 +1161,7 @@ class GraphSVX():
 
         #av_feat_values = self.data.x.mean(dim=0)
         #av_feat_values = np.mean(self.data.x[graph_index],axis=0)
-        av_feat_values = np.zeros(self.data.x[graph_index].shape[1])
+        av_feat_values = torch.zeros(self.data.x[graph_index].shape[1])
         adj = deepcopy(self.data.edge_index[graph_index])
 
         # Create new matrix A and X - for each sample ≈ reform z from z'
@@ -1172,7 +1171,6 @@ class GraphSVX():
             A = deepcopy(adj)
             #A[ex_nei, :] = 0
             #A[:, ex_nei] = 0
-            self.data.edge_index[graph_index] = A
 
             # Also change features of excluded nodes
             X = deepcopy(self.data.x[graph_index])
@@ -1182,17 +1180,13 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
-                        graph_index]
+                    proba, _ = self.model(X.unsqueeze(0).cuda(), A.unsqueeze(0).cuda())
             else:
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=self.data.edge_index).exp()[graph_index]
+                    proba, _ = self.model(X.unsqueeze(0), A.unsqueeze(0)) 
 
             # Softmax of function
-            fz[key] = fct(proba)[true_pred.item()]
-            #fz[key] = proba[true_pred.item()]
-
-            self.data.edge_index[graph_index] = adj
+            fz[key] = fct(proba[0])[true_pred.item()]
 
         return fz
 
