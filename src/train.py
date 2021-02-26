@@ -11,6 +11,8 @@ import torch.optim as optim
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 import os
+from utils.graph_utils import GraphSampler
+from torch.autograd import Variable
 
 
 def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
@@ -134,7 +136,9 @@ def accuracy(output, labels):
     return correct / len(labels)
 
 
-def train_syn(data, model, args, labels, train_mask):
+##################################################################
+
+def train_syn(data, model, args):
     opt = torch.optim.Adam(model.parameters(), lr=args.lr) #weight_decay=args.weight_decay)
     for epoch in range(args.num_epochs):
         total_loss = 0
@@ -143,21 +147,21 @@ def train_syn(data, model, args, labels, train_mask):
         opt.zero_grad()
         pred = model(data.x, data.edge_index)
 
-        pred = pred[train_mask]
-        label = labels[train_mask]
+        pred = pred[data.train_mask]
+        label = data.y[data.train_mask]
+
         loss = model.loss(pred, label)
-        # nn.utils.clip_grad_norm(model.parameters(), args.clip)
         loss.backward()
         opt.step()
         total_loss += loss.item() * 1
         
         if epoch % 10 == 0:
-            test_acc = test(data, model, args, labels, data.val_mask)
+            test_acc = test_syn(data, model, args, data.y, data.val_mask)
             print("Epoch {}. Loss: {:.4f}. Val accuracy: {:.4f}".format(
                 epoch, total_loss, test_acc))
     total_loss = total_loss / data.x.shape[0]
 
-def test(data, model, args, labels, test_mask):
+def test_syn(data, model, args, labels, test_mask):
     model.eval()
 
     train_ratio = args.train_ratio
@@ -177,7 +181,39 @@ def test(data, model, args, labels, test_mask):
     return correct / total
 
 
+##################################################################
+
+
 def train_gc(data, model, args):
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    
+    dataset_sampler = GraphSampler(data)
+    train_dataset_loader = torch.utils.data.DataLoader(
+        dataset_sampler,
+        batch_size=args.batch_size,
+        shuffle=True
+        )
+    
+    for epoch in range(args.num_epochs):
+        avg_loss = 0.0
+        model.train()
+        for batch_idx, df in enumerate(train_dataset_loader):
+            optimizer.zero_grad()
+            y_pred, _ = model(df["feats"], df["adj"])
+            loss = model.loss(y_pred, df['label'])
+            loss.backward()
+            nn.utils.clip_grad_norm(model.parameters(), args.clip)
+            optimizer.step()
+            avg_loss += loss
+
+        # Eval
+        avg_loss /= batch_idx + 1
+        if epoch % 10 == 0:
+            test_acc = test_gc(data, model, args, data.test_mask)
+            print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
+                epoch, avg_loss, test_acc))
+
+    """
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     for epoch in range(args.num_epochs):
@@ -194,12 +230,12 @@ def train_gc(data, model, args):
 
         # Eval
         if epoch % 10 == 0:
-            test_acc = test_gc(data, model, args)
+            test_acc = test_gc(data, model, args, data.test_mask)
             print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
                 epoch, loss, test_acc))
+    """
 
-
-def test_gc(data, model, args):
+def test_gc(data, model, args, mask):
     model.eval()
 
     train_ratio = args.train_ratio
@@ -210,12 +246,12 @@ def test_gc(data, model, args):
         pred = pred.argmax(dim=1)
 
         # node classification: only evaluate on nodes in test set
-        pred = pred[data.test_mask]
-        label = data.y[data.test_mask]
+        pred = pred[mask]
+        label = data.y[mask]
 
         correct += pred.eq(label).sum().item()
 
-    total = (data.test_mask == True).nonzero().shape[0]
+    total = (mask == True).nonzero().shape[0]
     return correct / total
 
 

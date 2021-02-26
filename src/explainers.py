@@ -1169,8 +1169,8 @@ class GraphSVX():
 
             # Change adj matrix
             A = deepcopy(adj)
-            #A[ex_nei, :] = 0
-            #A[:, ex_nei] = 0
+            A[ex_nei, :] = 0
+            A[:, ex_nei] = 0
 
             # Also change features of excluded nodes
             X = deepcopy(self.data.x[graph_index])

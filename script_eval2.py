@@ -260,6 +260,10 @@ def main():
     else:
         y_pred = model(data.x, data.edge_index)
 
+    # GraphSHAP explainer
+    graphshap = GraphSVX(data, model, args.gpu)
+    
+
     # Generate test nodes
     # Use only these specific nodes as they are the ones added manually, part of the defined shapes
     # node_indices = extract_test_nodes(data, num_samples=10, cg_dict['train_idx'])
@@ -283,50 +287,6 @@ def main():
             k = 5
             K = 8
 
-    # GraphSHAP explainer
-    graphshap = GraphSVX(data, model, args.gpu)
-    
-    # Condition for graph classification (Mutag) else explain node
-    """
-    graph_indices = [10,22]
-    for graph_idx in graph_indices: 
-        graphshap_explanations = graphshap.graph_classif([graph_idx],
-                                                        args.hops,
-                                                        args.num_samples,
-                                                        args.info,
-                                                        args.multiclass,
-                                                        args.fullempty,
-                                                        args.S,
-                                                        'graph_classification',
-                                                        args.feat,
-                                                        args.coal,
-                                                        args.g,
-                                                        args.regu,
-                                                        )[0]
-
-        # Def k = len(ground_truth)
-        # Derive ground truth from graph structure 
-        # ground_truth 
-
-        # Predicted class
-        pred_val, predicted_class = y_pred[graph_idx, :].max(dim=0)
-
-        # Keep only node explanations 
-        graphshap_node_explanations = graphshap_explanations[graphshap.F:] #,predicted_class]
-        
-        # Retrieve top k elements indices form graphshap_node_explanations
-        if graphshap.neighbours.shape[0] > k: 
-            i = 0
-            val, indices = torch.topk(torch.tensor(
-                graphshap_node_explanations.T), k+1)
-            # could weight importance based on val 
-            for node in torch.tensor(graphshap.neighbours)[indices]: 
-                if node.item() in ground_truth:
-                    i += 1
-            # Sort of accruacy metric
-            accuracy.append(i / k) 
-    """
-                                                    
     # GraphSHAP - assess accuracy of explanations
     # Loop over test nodes
     accuracy = []

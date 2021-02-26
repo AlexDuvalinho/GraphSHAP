@@ -5,8 +5,8 @@
 """
 
 from src.utils import *
-from src.train import train_and_val, accuracy, train_syn
-from src.models import GAT, GCN, GCNNet
+from src.train import train_and_val, accuracy, train_syn, train_gc
+from src.models import GAT, GCN, GCNNet, GcnEncoderGraph
 from src.data import prepare_data
 import argparse
 import random
@@ -36,7 +36,7 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='syn5',
+        dataset='syn6',
         seed=10,
         save=False
     )
@@ -61,33 +61,44 @@ def main():
     # Load the dataset
     data = prepare_data(args.dataset, args.seed)
 
-    # Retrieve the model and training hyperparameters depending the data/model given as input
-    hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
-    param = ''.join(['params_', args.dataset, '_', args.model])
-
     # Define and train the model
     if args.dataset in ['Cora', 'PubMed']:
+        # Retrieve the model and training hyperparameters depending the data/model given as input
+        hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
+        param = ''.join(['params_', args.dataset, '_', args.model])
         model = eval(args.model)(input_dim=data.x.size(
             1), output_dim=data.num_classes, **eval(hyperparam))
         train_and_val(model, data, **eval(param))
+        # Compute predictions
+        model.eval()
+        with torch.no_grad():
+            log_logits = model(data.x, data.edge_index)  # [2708, 7]
+        probas = log_logits.exp()  # combine in 1 line + change accuracy
+
+        # Evaluate the model - test set
+        test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+        print('Test accuracy is {:.4f}'.format(test_acc))
+
+    elif args.dataset in ['syn6', 'Mutagenicity']:
+        input_dims = data.x.shape[-1]
+        model = GcnEncoderGraph(input_dims,
+                            prog_args.hidden_dim,
+                            prog_args.output_dim,
+                            prog_args.num_classes,
+                            prog_args.num_gc_layers,
+                            bn=prog_args.bn,
+                            dropout=prog_args.dropout,
+                            args=prog_args)
+        train_gc(data, model, prog_args)
+
     else: 
         model = GCNNet(prog_args.input_dim, prog_args.hidden_dim,
                data.num_classes, prog_args.num_gc_layers, args=prog_args)
         train_syn(data, model, prog_args)
     
-    # Compute predictions
-    model.eval()
-    with torch.no_grad():
-        log_logits = model(x=data.x, edge_index=data.edge_index)  # [2708, 7]
-    probas = log_logits.exp()  # combine in 1 line + change accuracy
-
-    # Evaluate the model - test set
-    test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
-    print('Test accuracy is {:.4f}'.format(test_acc))
-
-    # Save model
+    # Save model 
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
-    if not os.path.exists(model_path):
+    if not os.path.exists(model_path) or args.save==True:
         torch.save(model, model_path)
 
 if __name__ == "__main__":

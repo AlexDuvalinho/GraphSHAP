@@ -56,7 +56,7 @@ def prepare_data(dataset, seed):
 			data.y.numpy(), seed=seed)
 		# Amazon: 4896 train, 1224 val, 1530 test
 	
-	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']: # syn6
+	elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']: 
 		data = synthetic_data(
 			dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
 	
@@ -299,6 +299,7 @@ def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
 			data = SimpleNamespace()
 			with open('data/BA-2motif.pkl', 'rb') as fin:
 				data.edge_index, data.x, data.y = pkl.load(fin)
+			data.x = np.ones_like(data.x)
 		else:
 			# MUTAG
 			data = SimpleNamespace()
