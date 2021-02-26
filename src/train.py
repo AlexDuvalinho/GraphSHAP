@@ -15,6 +15,10 @@ from utils.graph_utils import GraphSampler
 from torch.autograd import Variable
 
 
+##################################################################
+# Node Classification on real world datasets
+##################################################################
+
 def train_and_val(model, data, num_epochs, lr, wd, verbose=True):
     """ Model training
 
@@ -137,6 +141,8 @@ def accuracy(output, labels):
 
 
 ##################################################################
+# Node Classification on synthetic datasets
+##################################################################
 
 def train_syn(data, model, args):
     opt = torch.optim.Adam(model.parameters(), lr=args.lr) #weight_decay=args.weight_decay)
@@ -182,6 +188,8 @@ def test_syn(data, model, args, labels, test_mask):
 
 
 ##################################################################
+# Graph Classification 
+##################################################################
 
 
 def train_gc(data, model, args):
@@ -213,27 +221,6 @@ def train_gc(data, model, args):
             print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
                 epoch, avg_loss, test_acc))
 
-    """
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-
-    for epoch in range(args.num_epochs):
-        model.train()
-
-        #for df in dataset: # batch
-        optimizer.zero_grad()
-        y_pred, _ = model(data.x, data.edge_index)
-
-        loss = model.loss(
-            y_pred[data.train_mask], data.y[data.train_mask])
-        loss.backward()
-        optimizer.step()
-
-        # Eval
-        if epoch % 10 == 0:
-            test_acc = test_gc(data, model, args, data.test_mask)
-            print("Epoch {}. Loss: {:.4f}. Test accuracy: {:.4f}".format(
-                epoch, loss, test_acc))
-    """
 
 def test_gc(data, model, args, mask):
     model.eval()

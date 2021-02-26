@@ -13,7 +13,7 @@ import torch.utils.data
 
 
 class GraphSampler(torch.utils.data.Dataset):
-    """ Sample graphs and nodes in graph
+    """ Create proper dataset format that DataLoader will understand
     """
 
     def __init__(self,data):
@@ -30,12 +30,6 @@ class GraphSampler(torch.utils.data.Dataset):
         # self.val_feat = [row for row in data.x[(
         #     data.val_mask == True).nonzero()]]
         # self.val_label = data.y[(data.val_mask == True).nonzero()].tolist()
-
-        # self.test_adj = [row for row in data.edge_index[(
-        #     data.test_mask == True).nonzero()]]
-        # self.test_feat = [row for row in data.x[(
-        #     data.test_mask == True).nonzero()]]
-        # self.test_label = data.y[(data.test_mask == True).nonzero()].tolist()
 
     def __len__(self):
         return len(self.train_adj)
