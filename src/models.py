@@ -6,6 +6,7 @@
 import numpy as np
 from torch.nn import init
 from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.utils import to_dense_adj
 import torch_geometric.transforms as T
 import torch
 import torch.nn as nn
@@ -141,9 +142,6 @@ class GCNNet(torch.nn.Module):
         x = torch.cat(x_all, dim=1)
         x = self.linear(x)
         return F.log_softmax(x, dim=1)
-
-    def loss(self, pred, label): 
-        return F.nll_loss(pred, label)   #self.celloss(pred, label)
 
 
 
@@ -459,18 +457,8 @@ class GcnEncoderGraph(nn.Module):
         self.embedding_tensor = output
         ypred = self.pred_model(output)
         # print(output.size())
-        return ypred, adj_att_tensor
+        return F.log_softmax(ypred, dim=1)
 
-    def loss(self, pred, label, type="softmax"):
-        # softmax + CE
-        if type == "softmax":
-            return F.cross_entropy(pred, label) #size_average=True)
-        elif type == "margin":
-            batch_size = pred.size()[0]
-            label_onehot = torch.zeros(
-                batch_size, self.label_dim).long().cuda()
-            label_onehot.scatter_(1, label.view(-1, 1), 1)
-            return torch.nn.MultiLabelMarginLoss()(pred, label_onehot)
 
         # return F.binary_cross_entropy(F.sigmoid(pred[:,0]), label.float())
 
@@ -501,14 +489,12 @@ class GcnEncoderNode(GcnEncoderGraph):
             dropout,
             args=args,
         )
-        if hasattr(args, "loss_weight"):
-            print("Loss weight: ", args.loss_weight)
-            self.celoss = nn.CrossEntropyLoss(weight=args.loss_weight)
-        else:
-            self.celoss = nn.CrossEntropyLoss()
 
     def forward(self, x, adj, batch_num_nodes=None, **kwargs):
         # mask
+        # Convert ajd matrix
+        adj = to_dense_adj(adj)
+
         max_num_nodes = adj.size()[1]
         if batch_num_nodes is not None:
             embedding_mask = self.construct_mask(
@@ -521,9 +507,7 @@ class GcnEncoderNode(GcnEncoderGraph):
             x, adj, self.conv_first, self.conv_block, self.conv_last, embedding_mask
         )
         pred = self.pred_model(self.embedding_tensor)
-        return pred, adj_att
+        pred = pred.squeeze(0)
+        return F.log_softmax(pred, dim=1)
 
-    def loss(self, pred, label):
-        pred = torch.transpose(pred, 1, 2)
-        return self.celoss(pred, label)
 

@@ -5,8 +5,8 @@
 """
 
 from src.utils import *
-from src.train import train_and_val, accuracy, train_syn, train_gc
-from src.models import GAT, GCN, GCNNet, GcnEncoderGraph
+from src.train import train_and_val, evaluate, train_syn, train_gc
+from src.models import GAT, GCN, GCNNet, GcnEncoderGraph, GcnEncoderNode
 from src.data import prepare_data
 import argparse
 import random
@@ -36,9 +36,9 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='syn6',
+        dataset='Cora',
         seed=10,
-        save=False
+        save=True,
     )
 
     return parser.parse_args()
@@ -69,14 +69,7 @@ def main():
         model = eval(args.model)(input_dim=data.x.size(
             1), output_dim=data.num_classes, **eval(hyperparam))
         train_and_val(model, data, **eval(param))
-        # Compute predictions
-        model.eval()
-        with torch.no_grad():
-            log_logits = model(data.x, data.edge_index)  # [2708, 7]
-        probas = log_logits.exp()  # combine in 1 line + change accuracy
-
-        # Evaluate the model - test set
-        test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+        _, test_acc = evaluate(data, model, data.test_mask)
         print('Test accuracy is {:.4f}'.format(test_acc))
 
     elif args.dataset in ['syn6', 'Mutagenicity']:
@@ -92,8 +85,18 @@ def main():
         train_gc(data, model, prog_args)
 
     else: 
-        model = GCNNet(prog_args.input_dim, prog_args.hidden_dim,
-               data.num_classes, prog_args.num_gc_layers, args=prog_args)
+        # For pytorch geometric model 
+        #model = GCNNet(prog_args.input_dim, prog_args.hidden_dim,
+        #       data.num_classes, prog_args.num_gc_layers, args=prog_args)
+        input_dims = data.x.shape[-1]
+        model = GcnEncoderNode(input_dims,
+                                prog_args.hidden_dim,
+                                prog_args.output_dim,
+                                data.num_classes,
+                                prog_args.num_gc_layers,
+                                bn=prog_args.bn,
+                                dropout=prog_args.dropout,
+                                args=prog_args)
         train_syn(data, model, prog_args)
     
     # Save model 

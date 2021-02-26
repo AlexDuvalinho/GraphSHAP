@@ -1,7 +1,7 @@
 from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSVX,
                             Greedy)
 from src.data import prepare_data
-from src.train import accuracy
+from src.train import evaluate, test
 import torch
 import argparse
 import random
@@ -22,8 +22,8 @@ def build_arguments():
     parser.add_argument("--explainer", type=str,
                         help="Name of the explainer among Greedy, GraphLIME, Random, SHAP, LIME")
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--node_indexes", type=list, default=[0],
-                        help="indexes of the nodes whose prediction are explained")
+    parser.add_argument("--indexes", type=list, default=[0],
+                        help="indexes of the nodes/graphs whose prediction are explained")
     parser.add_argument("--hops", type=int,
                         help="number k for k-hops neighbours considered in an explanation")
     parser.add_argument("--num_samples", type=int,
@@ -51,10 +51,10 @@ def build_arguments():
 
     parser.set_defaults(
         model='GCN',
-        dataset='syn1',
+        dataset='Cora',
         seed=10,
         explainer='GraphSVX',
-        node_indexes=[500],
+        indexes=[500],
         hops=2,
         num_samples=200,
         fullempty=None, 
@@ -95,30 +95,46 @@ def main():
     # Load the model
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
     model = torch.load(model_path)
-
-    # Evaluate the model - test set
-    model.eval()
-    with torch.no_grad():
-        log_logits = model(data.x, data.edge_index)  # [2708, 7]
-    test_acc = accuracy(log_logits[data.test_mask], data.y[data.test_mask])
+    
+    # Evaluate the model 
+    if args.dataset in ['Cora', 'PubMed']:
+        _, test_acc = evaluate(data, model, data.test_mask)
+    else: 
+        test_acc = test(data, model, data.test_mask)
     print('Test accuracy is {:.4f}'.format(test_acc))
-    del log_logits, model_path, test_acc
 
     # Explain it with GraphSVX
     explainer = eval(args.explainer)(data, model, args.gpu)
-    explanations = explainer.explain(args.node_indexes,
-                                     args.hops,
-                                     args.num_samples,
-                                     args.info,
-                                     args.multiclass,
-                                     args.fullempty,
-                                     args.S,
-                                     args.hv,
-                                     args.feat,
-                                     args.coal,
-                                     args.g,
-                                     args.regu,
-                                     True)
+
+    # Distinguish graph classfication from node classification
+    if args.dataset in ['Mutagenicity', 'syn6']:
+        explanations = explainer.explain_graphs(args.indexes,
+                                         args.hops,
+                                         args.num_samples,
+                                         args.info,
+                                         args.multiclass,
+                                         args.fullempty,
+                                         args.S,
+                                         'graph_classification',
+                                         args.feat,
+                                         args.coal,
+                                         args.g,
+                                         args.regu,
+                                         True)
+    else: 
+        explanations = explainer.explain(args.indexes,
+                                        args.hops,
+                                        args.num_samples,
+                                        args.info,
+                                        args.multiclass,
+                                        args.fullempty,
+                                        args.S,
+                                        args.hv,
+                                        args.feat,
+                                        args.coal,
+                                        args.g,
+                                        args.regu,
+                                        True)
 
 if __name__ == "__main__":
     main()

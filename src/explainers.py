@@ -117,13 +117,13 @@ class GraphSVX():
                     self.model = self.model.to(device)
                     with torch.no_grad():
                         true_conf, true_pred = self.model(
-                            x=self.data.x.cuda(), 
-                            edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+                            self.data.x.cuda(), 
+                            self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
                 else: 
                     with torch.no_grad():
                         true_conf, true_pred = self.model(
-                            x=self.data.x, 
-                            edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+                            self.data.x, 
+                            self.data.edge_index).exp()[node_index].max(dim=0)
 
                 # Construct the k-hop subgraph of the node of interest (v)
                 self.neighbours, _, _, edge_mask =\
@@ -313,13 +313,13 @@ class GraphSVX():
                 self.model = self.model.to(device)
                 with torch.no_grad():
                     true_conf, true_pred = self.model(
-                        x=self.data.x.cuda(), 
-                        edge_index=self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
+                        self.data.x.cuda(), 
+                        self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
             else: 
                 with torch.no_grad():
                     true_conf, true_pred = self.model(
-                        x=self.data.x, 
-                        edge_index=self.data.edge_index).exp()[node_index].max(dim=0)
+                        self.data.x, 
+                        self.data.edge_index).exp()[node_index].max(dim=0)
 
             # Construct the k-hop subgraph of the node of interest (v)
             self.neighbours, _, _, edge_mask =\
@@ -503,11 +503,11 @@ class GraphSVX():
                 self.model = self.model.to(device)
                 with torch.no_grad():
                     true_conf, true_pred = self.model(self.data.x.cuda(),
-                        self.data.edge_index.cuda())[0][graph_index,:].max(dim=0)
+                        self.data.edge_index.cuda()).exp()[graph_index,:].max(dim=0)
             else:
                 with torch.no_grad():
                     true_conf, true_pred = self.model(self.data.x,
-                        self.data.edge_index)[0][graph_index,:].max(dim=0)
+                        self.data.edge_index).exp()[graph_index,:].max(dim=0)
 
             # Remove node v index from neighbours and store their number in D
             self.neighbours = list(
@@ -1000,10 +1000,10 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+                    proba = self.model(x=X.cuda(), edge_index=A.cuda())[node_index]
             else: 
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=A).exp()[node_index]
+                    proba = self.model(x=X, edge_index=A)[node_index]
 
             # Store final class prediction and confience level
             # pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1)
@@ -1114,10 +1114,10 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+                    proba = self.model(X.cuda(), A.cuda()).exp()[node_index]
             else:
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=A).exp()[node_index]
+                    proba = self.model(X, A).exp()[node_index]
 
             # Store predicted class label in fz
             if multiclass:
@@ -1180,13 +1180,13 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba, _ = self.model(X.unsqueeze(0).cuda(), A.unsqueeze(0).cuda())
+                    proba = self.model(X.unsqueeze(0).cuda(), A.unsqueeze(0).cuda()).exp()
             else:
                 with torch.no_grad():
-                    proba, _ = self.model(X.unsqueeze(0), A.unsqueeze(0)) 
+                    proba = self.model(X.unsqueeze(0), A.unsqueeze(0)).exp()
 
-            # Softmax of function
-            fz[key] = fct(proba[0])[true_pred.item()]
+            # Compute prediction
+            fz[key] = proba[0][true_pred.item()]
 
         return fz
 
