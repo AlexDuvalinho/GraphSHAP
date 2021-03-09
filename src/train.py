@@ -150,6 +150,7 @@ def train_syn(data, model, args):
         label = data.y[data.train_mask]
 
         loss = F.nll_loss(pred, label)
+        #loss = model.loss(pred, label)
         loss.backward()
         opt.step()
         total_loss += loss.item() * 1
@@ -216,6 +217,7 @@ def train_gc(data, model, args):
             optimizer.zero_grad()
             y_pred = model(df["feats"], df["adj"])
             loss = F.nll_loss(y_pred, df['label'])
+            #loss = model.loss(y_pred, df['label'])
             loss.backward()
             nn.utils.clip_grad_norm(model.parameters(), args.clip)
             optimizer.step()

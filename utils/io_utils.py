@@ -5,20 +5,15 @@ import os
 import statistics
 import re
 import csv
-
+import random
+import matplotlib
 import numpy as np
 import pandas as pd
 import scipy as sc
-
-
-import matplotlib
 import matplotlib.pyplot as plt
 
-import numpy as np
-import torch
 import networkx as nx
 import tensorboardX
-
 import cv2
 
 import torch
@@ -775,3 +770,11 @@ def log_graph2(adj, batch_num_nodes, writer, epoch, batch_idx, assign_tensor=Non
 	data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep="")
 	data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 	writer.add_image("graphs_colored", data, epoch)
+
+
+def fix_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True

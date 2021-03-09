@@ -1,12 +1,5 @@
-import torch
-
 # Colours for plots
 COLOURS = ['g', 'blue', 'r', 'c', 'm', 'k']
-
-# Input dimension of different datasets (features)
-INPUT_DIM = {'Cora': 1433,
-             'PubMed': 500,
-             'syn': 10}
 
 # Hyperparameters for eval1 pipeline 
 EVAL1_Cora = {'args_p': 0.013,

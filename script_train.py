@@ -21,29 +21,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def build_arguments():
-
-    # Argument parser
-    # use if __name__=='main': and place the rest in a function that you call
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str,
-                        help="Name of the GNN: GCN or GAT")
-    parser.add_argument("--dataset", type=str, 
-                        help="Name of the dataset among Cora, PubMed, Amazon, PPI, Reddit")
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--save", type=str,
-                        help="True to save the trained model obtained")
-
-    parser.set_defaults(
-        model='GCN',
-        dataset='Cora',
-        seed=10,
-        save=True,
-    )
-
-    return parser.parse_args()
-
-
 def fix_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -54,8 +31,7 @@ def fix_seed(seed):
 
 def main():
 
-    args = build_arguments()
-    prog_args = configs.arg_parse()
+    args = configs.arg_parse()
     fix_seed(args.seed)
 
     # Load the dataset
@@ -66,8 +42,7 @@ def main():
         # Retrieve the model and training hyperparameters depending the data/model given as input
         hyperparam = ''.join(['hparams_', args.dataset, '_', args.model])
         param = ''.join(['params_', args.dataset, '_', args.model])
-        model = eval(args.model)(input_dim=data.x.size(
-            1), output_dim=data.num_classes, **eval(hyperparam))
+        model = eval(args.model)(input_dim=data.num_features, output_dim=data.num_classes, **eval(hyperparam))
         train_and_val(model, data, **eval(param))
         _, test_acc = evaluate(data, model, data.test_mask)
         print('Test accuracy is {:.4f}'.format(test_acc))
@@ -75,34 +50,35 @@ def main():
     elif args.dataset in ['syn6', 'Mutagenicity']:
         input_dims = data.x.shape[-1]
         model = GcnEncoderGraph(input_dims,
-                            prog_args.hidden_dim,
-                            prog_args.output_dim,
-                            prog_args.num_classes,
-                            prog_args.num_gc_layers,
-                            bn=prog_args.bn,
-                            dropout=prog_args.dropout,
-                            args=prog_args)
-        train_gc(data, model, prog_args)
+                            args.hidden_dim,
+                            args.output_dim,
+                            data.num_classes,
+                            args.num_gc_layers,
+                            bn=args.bn,
+                            dropout=args.dropout,
+                            args=args)
+        train_gc(data, model, args)
 
     else: 
         # For pytorch geometric model 
-        #model = GCNNet(prog_args.input_dim, prog_args.hidden_dim,
-        #       data.num_classes, prog_args.num_gc_layers, args=prog_args)
+        #model = GCNNet(args.input_dim, args.hidden_dim,
+        #       data.num_classes, args.num_gc_layers, args=args)
         input_dims = data.x.shape[-1]
-        model = GcnEncoderNode(input_dims,
-                                prog_args.hidden_dim,
-                                prog_args.output_dim,
+        model = GcnEncoderNode(data.num_features,
+                                args.hidden_dim,
+                                args.output_dim,
                                 data.num_classes,
-                                prog_args.num_gc_layers,
-                                bn=prog_args.bn,
-                                dropout=prog_args.dropout,
-                                args=prog_args)
-        train_syn(data, model, prog_args)
+                                args.num_gc_layers,
+                                bn=args.bn,
+                                dropout=args.dropout,
+                                args=args)
+        train_syn(data, model, args)
     
     # Save model 
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
     if not os.path.exists(model_path) or args.save==True:
         torch.save(model, model_path)
+
 
 if __name__ == "__main__":
     main()
