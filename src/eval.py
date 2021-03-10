@@ -10,7 +10,6 @@ import os
 import warnings
 from datetime import datetime
 
-import configs
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -46,9 +45,9 @@ def eval_syn(data, model, args):
     k = 4  # number of nodes for the shape introduced (house, cycle)
     K = 0
     if args.dataset == 'syn1':
-        node_indices = list(range(400, 500, 5))
+        node_indices = list(range(400, 450, 5))
     elif args.dataset == 'syn2':
-        node_indices = list(range(400, 450, 5)) + list(range(1100, 1150, 5))
+        node_indices = list(range(400, 425, 5)) + list(range(1100, 1125, 5))
     elif args.dataset == 'syn4':
         node_indices = list(range(511, 571, 6))
         if args.hops == 3:
@@ -70,7 +69,6 @@ def eval_syn(data, model, args):
     accuracy = []
     diff_in_pred = []
     percentage_fidelity = []
-    fct = torch.nn.Softmax(dim=1)
     feat_accuracy = []
     for node_idx in node_indices:
         graphsvx_explanations = graphsvx.explain([node_idx],

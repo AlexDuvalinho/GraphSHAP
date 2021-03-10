@@ -41,6 +41,8 @@ def arg_parse():
                      help='Whether to add bias. Default to True.')
     training_parser.add_argument('--weight_decay', dest='weight_decay', type=float,
                      help='Weight decay regularization constant.')
+    training_parser.add_argument('--clip', dest='clip', type=float,
+                                 help='Gradient clip value')
 
     # Evaluation1 params
     eval_noise_parser = parser.add_argument_group('eval noise')
@@ -102,20 +104,20 @@ def arg_parse():
     parser.set_defaults(dataset='syn1',
                         model='GCN',
                         indexes=[500],
-                        num_samples=200,
+                        num_samples=65,
                         fullempty=None,
-                        S=3,
+                        S=1,
                         hops=2,
                         hv='compute_pred',
                         feat='Expectation',
-                        coal='Smarter',
+                        coal='SmarterSeparate',
                         g='WLR_sklearn',
                         multiclass=False,
                         regu=None,
                         info=True,
                         seed=10,
                         gpu=False,
-                        cuda='1',
+                        cuda='0',
                         save=False,
                         feat_explainers=['GraphSVX', 'GNNExplainer', 
                                             'GraphLIME', 'LIME', 'SHAP'],

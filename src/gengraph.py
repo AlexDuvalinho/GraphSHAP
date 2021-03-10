@@ -290,6 +290,6 @@ def gen_syn6():
 		adjs, feats, labels = pkl.load(fin)
 		
 	G = nx.Graph(adjs)
-	adj = torch_geometric.utils.dense_to_sparse(torch.tensor(adjs))
-
+	#adj = torch_geometric.utils.dense_to_sparse(torch.tensor(adjs))
+	return G
 	 

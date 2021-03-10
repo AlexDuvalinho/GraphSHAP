@@ -147,7 +147,7 @@ class GraphSVX():
                 elif args_feat == 'All':
                     self.F = self.data.x[node_index, :].shape[0]
                     feat_idx = torch.unsqueeze(
-                        torch.arange(self.data.x.size(0)), 1)
+                        torch.arange(self.data.num_nodes), 1)
                 else:
                     # Stats dataset
                     std = self.data.x.std(axis=0)
@@ -345,7 +345,7 @@ class GraphSVX():
             elif args_feat == 'All':
                 self.F = self.data.x[node_index, :].shape[0]
                 feat_idx = torch.unsqueeze(
-                    torch.arange(self.data.x.size(0)), 1)
+                    torch.arange(self.data.num_nodes), 1)
             else:
                 # Stats dataset
                 std = self.data.x.std(axis=0)
@@ -670,8 +670,8 @@ class GraphSVX():
                 else:
                     # Split in two number of remaining samples
                     # Half for specific coalitions with low k and rest random samples
-                    samp = i + 9*(num_samples - i)//10
-                    #samp = num_samples
+                    #samp = i + 9*(num_samples - i)//10
+                    samp = num_samples
                     while i < samp and k <= min(args_K, D):
                         # Sample coalitions of k1 neighbours or k1 features without repet and order.
                         L = list(combinations(range(0, M), k))
@@ -684,14 +684,14 @@ class GraphSVX():
                             i += 1
                             # If limit reached, sample random coalitions
                             if i == samp:
-                                #z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
+                                z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
                                 return z_
                             # Coalitions (No nei, k feat) or (No feat, k nei)
                             z_[i, L[j]] = torch.ones(k)
                             i += 1
                             # If limit reached, sample random coalitions
                             if i == samp:
-                                #z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
+                                z_[i:, :] = torch.empty(num_samples-i, M).random_(2)
                                 return z_
                         k += 1
 
@@ -905,7 +905,7 @@ class GraphSVX():
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
+            av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
             # 'All' and 'Expectation'
@@ -1000,10 +1000,10 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=A.cuda())[node_index]
+                    proba = self.model(X.cuda(), A.cuda()).exp()[node_index]
             else: 
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=A)[node_index]
+                    proba = self.model(X, A).exp()[node_index]
 
             # Store final class prediction and confience level
             # pred_confidence[key], classes_labels[key] = torch.topk(proba, k=1)
@@ -1033,7 +1033,7 @@ class GraphSVX():
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
+            av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
             #av_feat_values = self.data.x[402]
@@ -1124,7 +1124,7 @@ class GraphSVX():
                 fz[key] = proba
             else:
                 fz[key] = proba[true_pred]
-
+                
         return fz
 
     def graph_classification(self, graph_index, num_samples, D, z_, args_K, args_feat, true_pred):
@@ -1203,7 +1203,7 @@ class GraphSVX():
                 Dimension (N * C) where N is num_samples and C num_classses.
         """
         if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
+            av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
 
@@ -1295,7 +1295,7 @@ class GraphSVX():
         """
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
+            av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
         # or random feature vector made of random value across each col of X
@@ -1382,7 +1382,7 @@ class GraphSVX():
         # We need to recover z from z' - wrt sampled neighbours and node features
         # Initialise new node feature vectors and neighbours to disregard
         if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.x.size(1))
+            av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
 
@@ -1836,7 +1836,7 @@ class Greedy:
         self.data = data
         self.neighbours = None
         self.gpu = gpu
-        self.M = self.data.x.size(1)
+        self.M = self.data.num_features
         self.F = self.M
 
         self.model.eval()
@@ -2024,8 +2024,8 @@ class GraphLIME:
         self.rho = rho
         self.cached = cached
         self.cached_result = None
-        self.M = data.x.size(1)
-        self.F = data.x.size(1)
+        self.M = self.data.num_features
+        self.F = self.data.num_features
         self.gpu = gpu
 
         self.model.eval()
@@ -2170,8 +2170,8 @@ class LIME:
         self.data = data
         self.model = model
         self.gpu = gpu
-        self.M = data.x.size(1)
-        self.F = data.x.size(1)
+        self.M = self.data.num_features
+        self.F = self.data.num_features
 
         self.model.eval()
 
@@ -2271,7 +2271,7 @@ class SHAP():
         self.data = data
         self.gpu = gpu
         # number of nonzero features - for each node index
-        self.M = data.x.size(1)
+        self.M = self.data.num_features
         self.neighbours = None
         self.F = self.M
 
@@ -2302,7 +2302,7 @@ class SHAP():
         num_samples = int(0.75 * num_samples)
 
         # Consider all features (+ use expectation like below)
-        feat_idx = torch.unsqueeze(torch.arange(self.data.x.size(0)), 1)
+        feat_idx = torch.unsqueeze(torch.arange(self.data.num_nodes), 1)
 
         # Sample z' - binary vector of dimension (num_samples, M)
         z_ = torch.empty(num_samples, self.M).random_(2)
@@ -2430,13 +2430,13 @@ class GNNExplainer():
     def __init__(self, data, model, gpu=False):
         self.data = data
         self.model = model
-        self.M = data.x.size(0) + data.x.size(1)
+        self.M = self.data.num_nodes + self.data.num_features
         self.gpu = gpu
-        # self.coefs = torch.zeros(data.x.size(0), self.data.num_classes)
+        # self.coefs = torch.zeros(self.data.num_nodes, self.data.num_classes)
         self.coefs = None  # node importance derived from edge importance
         self.edge_mask = None
         self.neighbours = None
-        self.F = data.x.size(1)
+        self.F = self.data.num_features
 
         self.model.eval()
 

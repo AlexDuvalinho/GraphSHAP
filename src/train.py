@@ -152,6 +152,7 @@ def train_syn(data, model, args):
         loss = F.nll_loss(pred, label)
         #loss = model.loss(pred, label)
         loss.backward()
+        nn.utils.clip_grad_norm(model.parameters(), args.clip)
         opt.step()
         total_loss += loss.item() * 1
         

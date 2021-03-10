@@ -8,6 +8,7 @@ from src.utils import *
 from src.train import train_and_val, evaluate, train_syn, train_gc
 from src.models import GAT, GCN, GCNNet, GcnEncoderGraph, GcnEncoderNode
 from src.data import prepare_data
+from utils.io_utils import fix_seed
 import argparse
 import random
 import torch
@@ -17,16 +18,13 @@ import numpy as np
 import os 
 import warnings
 
+import utils.io_utils as io_utils
+import src.models as models
+from types import SimpleNamespace
+import torch_geometric
+
 
 warnings.filterwarnings("ignore")
-
-
-def fix_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
 
 
 def main():
@@ -35,6 +33,8 @@ def main():
     fix_seed(args.seed)
 
     # Load the dataset
+    args.save = True
+    args.dataset='syn1'
     data = prepare_data(args.dataset, args.seed)
 
     # Define and train the model

@@ -15,7 +15,6 @@ import warnings
 
 import configs
 import utils.featgen as featgen
-import utils.parser_utils as parser_utils
 import utils.io_utils as io_utils
 import src.gengraph as gengraph
 import pickle as pkl
@@ -306,7 +305,7 @@ def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
         data = torch.load(data_path)
     else:
         if dataset == 'syn6':
-            #G, labels, name = gengraph.gen_syn6()
+            #G = gengraph.gen_syn6()
             data = SimpleNamespace()
             with open('data/BA-2motif.pkl', 'rb') as fin:
                 data.edge_index, data.x, data.y = pkl.load(fin)
@@ -323,7 +322,7 @@ def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
         data.y = torch.LongTensor(data.y)
         _, data.y = data.y.max(dim=1)
         data.num_classes = 2
-        data.num_features = args_input_dim
+        data.num_features = data.x.shape[-1]
         data.num_nodes = data.edge_index.shape[1]
         data.num_graphs = data.x.shape[0]
         data.name = dataset

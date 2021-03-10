@@ -201,13 +201,10 @@ class GraphConv(nn.Module):
     def forward(self, x, adj):
         if self.dropout > 0.001:
             x = self.dropout_layer(x)
-        # deg = torch.sum(adj, -1, keepdim=True)
+
         if self.att:
             x_att = torch.matmul(x, self.att_weight)
-            # import pdb
-            # pdb.set_trace()
             att = x_att @ x_att.permute(0, 2, 1)
-            # att = self.softmax(att)
             adj = adj * att
 
         y = torch.matmul(adj, x)
@@ -219,7 +216,7 @@ class GraphConv(nn.Module):
             y = y + self.bias
         if self.normalize_embedding:
             y = F.normalize(y, p=2, dim=2)
-            # print(y[0][0])
+
         return y, adj
 
 
@@ -244,6 +241,7 @@ class GcnEncoderGraph(nn.Module):
         self.bn = bn
         self.num_layers = num_layers
         self.num_aggs = 1
+        self.celloss = nn.CrossEntropyLoss()
 
         self.bias = True
         self.gpu = args.gpu
@@ -456,11 +454,8 @@ class GcnEncoderGraph(nn.Module):
 
         self.embedding_tensor = output
         ypred = self.pred_model(output)
-        # print(output.size())
+        
         return F.log_softmax(ypred, dim=1)
-
-
-        # return F.binary_cross_entropy(F.sigmoid(pred[:,0]), label.float())
 
 
 class GcnEncoderNode(GcnEncoderGraph):
@@ -508,6 +503,9 @@ class GcnEncoderNode(GcnEncoderGraph):
         )
         pred = self.pred_model(self.embedding_tensor)
         pred = pred.squeeze(0)
-        return F.log_softmax(pred, dim=1)
+
+        return F.log_softmax(pred, dim=1)  # pred
 
 
+    def loss(self, output, target):
+        return self.celloss(output, target)
