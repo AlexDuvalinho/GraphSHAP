@@ -101,12 +101,12 @@ def arg_parse():
     # args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
-    parser.set_defaults(dataset='syn1',
+    parser.set_defaults(dataset='syn6',
                         model='GCN',
                         indexes=[500],
-                        num_samples=65,
+                        num_samples=200,
                         fullempty=None,
-                        S=1,
+                        S=4,
                         hops=2,
                         hv='compute_pred',
                         feat='Expectation',

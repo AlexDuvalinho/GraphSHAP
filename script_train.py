@@ -34,7 +34,7 @@ def main():
 
     # Load the dataset
     args.save = True
-    args.dataset='syn1'
+    args.dataset='syn6'
     data = prepare_data(args.dataset, args.seed)
 
     # Define and train the model

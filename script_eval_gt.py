@@ -30,10 +30,9 @@ def main():
     else:
         print("Using CPU")
 
-
     # Load dataset
     data = prepare_data(args.dataset, args.seed)
-    
+    """
     args.ckptdir = 'ckpt'
     args.bmname = None
     args.name_suffix = ''
@@ -61,7 +60,7 @@ def main():
     )
     model.load_state_dict(ckpt["model_state"])
     del ckpt
-    
+    """
     # Load model 
     model_path = 'models/GCN_model_{}.pth'.format(args.dataset)
     model = torch.load(model_path)

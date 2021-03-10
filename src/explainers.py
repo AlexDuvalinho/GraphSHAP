@@ -524,21 +524,23 @@ class GraphSVX():
             if args_coal == 'SmarterSeparate':
                 weights = torch.zeros(num_samples, dtype=torch.float64)
                 # Features only
-                num = num_samples//2
-                z_bis = eval('self.' + args_coal)(num,
-                                                  args_K, 1)  # SmarterSeparate
+                num = int(num_samples * self.F/self.M)
+                z_bis = eval('self.' + args_coal)(num,args_K, 1)  
+                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                 s = (z_bis != 0).sum(dim=1)
                 weights[:num] = self.shapley_kernel(s, self.F)
                 z_ = torch.zeros(num_samples, self.M)
                 z_[:num, :self.F] = z_bis
                 # Node only
                 z_bis = eval('self.' + args_coal)(
-                    num + num_samples % 2, args_K, 0)  # SmarterSeparate
+                    num_samples-num, args_K, 0)  
+                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                 s = (z_bis != 0).sum(dim=1)
                 weights[num:] = self.shapley_kernel(s, D)
-                z_[num:, :] = torch.ones(num + num_samples % 2, self.M)
+                z_[num:, :] = torch.ones(num_samples-num, self.M)
                 z_[num:, self.F:] = z_bis
                 del z_bis, s
+
             else:
                 # Necessary argument if we choose to sample all possible coalitions
                 if args_coal == 'All':
@@ -1140,7 +1142,7 @@ class GraphSVX():
             Dimension (N * C) where N is num_samples and C num_classses.
         """
         # Softmax
-        fct = torch.nn.Softmax(dim=0)
+        # fct = torch.nn.Softmax(dim=0)
 
         excluded_feat = {}
         excluded_nei = {}
