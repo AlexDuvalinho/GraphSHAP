@@ -65,5 +65,7 @@ def main():
                                         args.regu,
                                         True)
 
+    print('Sum explanations: ', np.sum(explanations))
+
 if __name__ == "__main__":
     main()

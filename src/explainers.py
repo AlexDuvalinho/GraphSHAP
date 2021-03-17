@@ -87,222 +87,10 @@ class GraphSVX():
                 [tensors]: shapley values for features/neighbours that influence node v's pred
                         and base value
         """
-        if args_hv == 'compute_pred_subgraph':
-            phi_list = self.explain_feat_subgraph(node_indexes,
-                                        hops,
-                                        num_samples,
-                                        info,
-                                        multiclass,
-                                        fullempty,
-                                        S,
-                                        args_hv,
-                                        args_feat,
-                                        args_coal,
-                                        args_g,
-                                        regu,
-                                        vizu)
-
-        else: 
-            # Time
-            start = time.time()
-
-            # Explain several nodes iteratively
-            phi_list = []
-            for node_index in node_indexes:
-
-                # Compute true prediction for original instance via explained GNN model
-                if self.gpu: 
-                    device = torch.device(
-                        'cuda' if torch.cuda.is_available() else 'cpu')
-                    self.model = self.model.to(device)
-                    with torch.no_grad():
-                        true_conf, true_pred = self.model(
-                            self.data.x.cuda(), 
-                            self.data.edge_index.cuda()).exp()[node_index].max(dim=0)
-                else: 
-                    with torch.no_grad():
-                        true_conf, true_pred = self.model(
-                            self.data.x, 
-                            self.data.edge_index).exp()[node_index].max(dim=0)
-
-                # Construct the k-hop subgraph of the node of interest (v)
-                self.neighbours, _, _, edge_mask =\
-                    torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                        num_hops=hops,
-                                                        edge_index=self.data.edge_index)
-                # Stores the indexes of the neighbours of v (+ index of v itself)
-
-                # Retrieve 1-hop neighbours of v
-                one_hop_neighbours, _, _, _ =\
-                    torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                        num_hops=1,
-                                                        edge_index=self.data.edge_index)
-
-                discarded_feat_idx = []
-
-                # Consider only relevant entries for v only
-                if args_feat == 'Null':
-                    feat_idx = self.data.x[node_index, :].nonzero()
-                    self.F = feat_idx.size()[0]
-                elif args_feat == 'All':
-                    self.F = self.data.x[node_index, :].shape[0]
-                    feat_idx = torch.unsqueeze(
-                        torch.arange(self.data.num_nodes), 1)
-                else:
-                    # Stats dataset
-                    std = self.data.x.std(axis=0)
-                    mean = self.data.x.mean(axis=0)
-                    # Feature intermediate rep
-                    mean_subgraph = self.data.x[node_index, :]
-                    # Select relevant features only - (E-e,E+e)
-                    mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
-                                                torch.ones_like(mean_subgraph)*100)
-                    mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
-                                                torch.ones_like(mean_subgraph)*100)
-                    feat_idx = (mean_subgraph == 100).nonzero()
-                    discarded_feat_idx = (mean_subgraph != 100).nonzero()
-                    self.F = feat_idx.shape[0]
-                    del mean, mean_subgraph, std
-
-                # Remove node v index from neighbours and store their number in D
-                self.neighbours = self.neighbours[self.neighbours != node_index]
-                D = self.neighbours.shape[0]
-
-                # Total number of features + neighbours considered for node v
-                self.M = self.F+D
-
-                # Def range of endcases considered
-                args_K = S
-
-                if args_coal == 'SmarterSeparate':
-                    weights = torch.zeros(num_samples, dtype=torch.float64)
-                    # Features only
-                    num = int(num_samples * self.F/self.M)
-                    z_bis = eval('self.' + args_coal)(num,args_K, 1)  
-                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
-                    s = (z_bis != 0).sum(dim=1)
-                    weights[:num] = self.shapley_kernel(s, self.F)
-                    z_ = torch.zeros(num_samples, self.M)
-                    z_[:num, :self.F] = z_bis
-                    # Node only
-                    z_bis = eval('self.' + args_coal)(
-                        num_samples-num, args_K, 0)  
-                    z_bis = z_bis[torch.randperm(z_bis.size()[0])]
-                    s = (z_bis != 0).sum(dim=1)
-                    weights[num:] = self.shapley_kernel(s, D)
-                    z_[num:, :] = torch.ones(num_samples-num, self.M)
-                    z_[num:, self.F:] = z_bis
-                    del z_bis, s
-
-                else:
-                    # Necessary argument if we choose to sample all possible coalitions
-                    if args_coal == 'All':
-                        num_samples = min(10000, 2**self.M)
-
-                    ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
-                    z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
-
-                    # Shuffle
-                    z_ = z_[torch.randperm(z_.size()[0])]
-
-                    # Compute |z'| for each sample z': number of non-zero entries
-                    s = (z_ != 0).sum(dim=1)
-
-                    ### GRAPHSHAP KERNEL: define weights associated with each sample
-                    weights = self.shapley_kernel(s, self.M)
-                    if max(weights) > 9 and info:
-                        print('!! Empty or/and full coalition is included !!')
-
-                # Discard full and empty coalition if specified
-                if fullempty:
-                    weights[(weights == 1000).nonzero()] = 0
-
-                ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
-                # Retrive z from z' and x_v, then compute f(z)
-                fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-                                            feat_idx, one_hop_neighbours, args_K, args_feat,
-                                            discarded_feat_idx, multiclass, true_pred)
-
-                ### g: Weighted Linear Regression to learn shapley values
-                phi, base_value = eval('self.' + args_g)(z_,
-                                                        weights, fz, multiclass, info)
-
-                ### RESCALING
-                if type(regu) == int and not multiclass:
-                    expl = (true_conf.cpu() - base_value).detach().numpy()
-                    phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
-                    phi[self.F:] = ((1-regu) * expl /
-                                    sum(phi[self.F:])) * phi[self.F:]
-
-                ### PRINT some information
-                if info:
-                    print('Base value', base_value, 'for class ', true_pred.item())
-                    self.print_info(D, node_index, phi, feat_idx,
-                                    true_pred, true_conf, multiclass)
-
-                ### VISUALISATION
-                if vizu:
-                    self.vizu(edge_mask, node_index, phi,
-                            true_pred, hops, multiclass)
-
-                # Time
-                # TODO: remove after tests
-                end = time.time()
-                if info:
-                    print('Time: ', end - start)
-
-                # Append explanations for this node to list of expl.
-                phi_list.append(phi)
-
-        return phi_list
-
-    def explain_feat_subgraph(self,
-                              node_indexes=[0],
-                              hops=2,
-                              num_samples=10,
-                              info=True,
-                              multiclass=False,
-                              fullempty=None,
-                              S=3,
-                              args_hv='compute_pred',
-                              args_feat='Expectation',
-                              args_coal='Smarter',
-                              args_g='WLS',
-                              regu=None,
-                              vizu=False):
-        """ Explain prediction for a given node - GraphSVX method
-            Analyses the importance of a feature with respect to its values
-            in the subgraph of the explained node, instead of the node value itself. 
-
-        Args:
-            node_indexes (list, optional): indexes of the nodes of interest. Defaults to [0].
-            hops (int, optional): number k of k-hop neighbours to consider in the subgraph 
-                                                    around node_index. Defaults to 2.
-            num_samples (int, optional): number of samples we want to form GraphSVX's new dataset. 
-                                                    Defaults to 10.
-            info (bool, optional): Print information about explainer's inner workings. 
-                                                    And include vizualisation. Defaults to True.
-            multiclass (bool, optional): extension - consider predicted class only or all classes
-            fullempty (bool, optional): enforce high weight for full and empty coalitions
-            S (int, optional): maximum size of coalitions that are favoured in mask generation phase 
-            args_hv (str, optional): strategy used to convert simplified input z' to original
-                                                    input space z
-            args_feat (str, optional): way to switch off and discard node features (0 or expectation)
-            args_coal (str, optional): how we sample coalitions z'
-            args_g (str, optional): method used to train model g on (z', f(z))
-            regu (int, optional): extension - apply regularisation to balance importance granted
-                                                    to nodes vs features
-            vizu (bool, optional): creates vizualisation or not
-
-        Returns:
-                [tensors]: shapley values for features/neighbours that influence node v's pred
-                        and base value
-        """
-
         # Time
         start = time.time()
 
-        # Explain several nodes iteratively
+        # Explain several nodes sequentially 
         phi_list = []
         for node_index in node_indexes:
 
@@ -321,50 +109,29 @@ class GraphSVX():
                         self.data.x, 
                         self.data.edge_index).exp()[node_index].max(dim=0)
 
-            # Construct the k-hop subgraph of the node of interest (v)
+            # --- Node selection ---
+            # Investigate k-hop subgraph of the node of interest (v)
             self.neighbours, _, _, edge_mask =\
                 torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                     num_hops=hops,
-                                                     edge_index=self.data.edge_index)
-            # Stores the indexes of the neighbours of v (+ index of v itself)
-
+                                                    num_hops=hops,
+                                                    edge_index=self.data.edge_index)
+            
             # Retrieve 1-hop neighbours of v
             one_hop_neighbours, _, _, _ =\
                 torch_geometric.utils.k_hop_subgraph(node_idx=node_index,
-                                                     num_hops=1,
-                                                     edge_index=self.data.edge_index)
-
-        # Specific case: features in subgraph
-            # Determine z': features and neighbours whose importance is investigated
-            discarded_feat_idx = []
-            # Consider only non-zero entries in the subgraph of v
-            if args_feat == 'Null':
-                feat_idx = self.data.x[self.neighbours, :].mean(
-                    axis=0).nonzero()
-                self.F = feat_idx.size()[0]
-            elif args_feat == 'All':
-                self.F = self.data.x[node_index, :].shape[0]
-                feat_idx = torch.unsqueeze(
-                    torch.arange(self.data.num_nodes), 1)
-            else:
-                # Stats dataset
-                std = self.data.x.std(axis=0)
-                mean = self.data.x.mean(axis=0)
-                # Feature intermediate rep
-                mean_subgraph = self.data.x[node_index, :]
-                # Select relevant features only - (E-e,E+e)
-                mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
-                                            torch.ones_like(mean_subgraph)*100)
-                mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
-                                            torch.ones_like(mean_subgraph)*100)
-                feat_idx = (mean_subgraph == 100).nonzero()
-                discarded_feat_idx = (mean_subgraph != 100).nonzero()
-                self.F = feat_idx.shape[0]
-                del mean, mean_subgraph, std
+                                                    num_hops=1,
+                                                    edge_index=self.data.edge_index)
+            # Stores the indexes of the neighbours of v (+ index of v itself)
 
             # Remove node v index from neighbours and store their number in D
             self.neighbours = self.neighbours[self.neighbours != node_index]
             D = self.neighbours.shape[0]
+
+            # --- Feature selection ---
+            if args_hv == 'compute_pred_subgraph':
+                feat_idx, discarded_feat_idx = self.feature_selection_subgraph(node_index, args_feat)
+            else: 
+                feat_idx, discarded_feat_idx = self.feature_selection(node_index, args_feat)
 
             # Total number of features + neighbours considered for node v
             self.M = self.F+D
@@ -372,71 +139,43 @@ class GraphSVX():
             # Def range of endcases considered
             args_K = S
 
-            if args_coal == 'SmarterSeparate':
-                weights = torch.zeros(num_samples, dtype=torch.float64)
-                # Features only
-                num = int(num_samples * self.F/self.M)
-                z_bis = eval('self.' + args_coal)(num,args_K, 1)  # SmarterSeparate
-                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
-                s = (z_bis != 0).sum(dim=1)
-                weights[:num] = self.shapley_kernel(s, self.F)
-                z_ = torch.zeros(num_samples, self.M)
-                z_[:num, :self.F] = z_bis
-                # Node only
-                z_bis = eval('self.' + args_coal)(
-                    num_samples-num, args_K, 0)  # SmarterSeparate
-                z_bis = z_bis[torch.randperm(z_bis.size()[0])]
-                s = (z_bis != 0).sum(dim=1)
-                weights[num:] = self.shapley_kernel(s, D)
-                z_[num:, :] = torch.ones(num_samples-num, self.M)
-                z_[num:, self.F:] = z_bis
-                del z_bis, s
-
-            else:
-                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
-                z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
-
-                # Shuffle
-                z_ = z_[torch.randperm(z_.size()[0])]
-
-                # Compute |z'| for each sample z': number of non-zero entries
-                s = (z_ != 0).sum(dim=1)
-
-                ### GRAPHSHAP KERNEL: define weights associated with each sample
-                weights = self.shapley_kernel(s, self.M)
-
+            # --- MASK GENERATOR --- 
+            # Generate binary samples z' representing coalitions of nodes and features
+            z_, weights = self.mask_generation(num_samples, args_coal, args_K, D, info, regu)
 
             # Discard full and empty coalition if specified
             if fullempty:
                 weights[(weights == 1000).nonzero()] = 0
 
-            ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
-            # Retrive z from z' and x_v, then compute f(z)
+            # --- GRAPH GENERATOR --- 
+            # Create dataset (z', f(GEN(z'))), stored as (z_, fz)
+            # Retrieve z from z' and x_v, then compute f(z)
             fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
-                                         feat_idx, one_hop_neighbours, args_K, args_feat,
-                                         discarded_feat_idx, multiclass, true_pred)
+                                        feat_idx, one_hop_neighbours, args_K, args_feat,
+                                        discarded_feat_idx, multiclass, true_pred)
 
-            ### g: Weighted Linear Regression to learn shapley values
+            # --- EXPLANATION GENERATOR --- 
+            # Train Surrogate Weighted Linear Regression - learns shapley values
             phi, base_value = eval('self.' + args_g)(z_,
-                                                     weights, fz, multiclass, info)
+                                                    weights, fz, multiclass, info)
 
-            ### RESCALING
+            # Rescale
             if type(regu) == int and not multiclass:
                 expl = (true_conf.cpu() - base_value).detach().numpy()
                 phi[:self.F] = (regu * expl / sum(phi[:self.F])) * phi[:self.F]
                 phi[self.F:] = ((1-regu) * expl /
                                 sum(phi[self.F:])) * phi[self.F:]
 
-            ### PRINT some information
+            # Print information
             if info:
                 print('Base value', base_value, 'for class ', true_pred.item())
                 self.print_info(D, node_index, phi, feat_idx,
                                 true_pred, true_conf, multiclass)
 
-            ### VISUALISATION
+            # Visualise
             if vizu:
                 self.vizu(edge_mask, node_index, phi,
-                          true_pred, hops, multiclass)
+                        true_pred, hops, multiclass)
 
             # Time
             end = time.time()
@@ -492,7 +231,7 @@ class GraphSVX():
         # Time
         start = time.time()
 
-        # Explain several nodes iteratively
+        # --- Explain several nodes iteratively ---
         phi_list = []
         for graph_index in graph_indices:
 
@@ -521,11 +260,135 @@ class GraphSVX():
             # Def range of endcases considered
             args_K = S
 
+            # --- MASK GENERATOR ---
+            z_, weights = self.mask_generation(num_samples, args_coal, args_K, D, info, regu)
+            
+            # Discard full and empty coalition if specified
+            if fullempty:
+                weights[(weights == 1000).nonzero()] = 0
+
+            # --- GRAPH GENERATOR ---
+            # Create dataset (z', f(GEN(z'))), stored as (z_, fz)
+            # Retrieve z from z' and x_v, then compute f(z)
+            fz = self.graph_classification(
+                graph_index, num_samples, D, z_, args_K, args_feat, true_pred)
+
+            # --- EXPLANATION GENERATOR --- 
+            # Train Surrogate Weighted Linear Regression - learns shapley values
+            phi, base_value = eval('self.' + args_g)(z_, weights, fz,
+                                                     multiclass, info)
+
+            phi_list.append(phi)
+
+            return phi_list
+
+
+    ################################
+    # Feature selector
+    ################################
+
+    def feature_selection(self, node_index, args_feat):
+        """ Select features who truly impact prediction
+        Others will receive a 0 shapley value anyway 
+
+        Args:
+            node_index (int): node index
+            args_feat (str): strategy utilised to select 
+                                important featutres
+
+        Returns:
+            [tensor]: list of important features' index
+            [tensor]: list of discarded features' index
+        """
+        
+        #Only consider relevant features in explanations
+        discarded_feat_idx = []
+        if args_feat == 'All':
+            # Select all features 
+            self.F = self.data.x[node_index, :].shape[0]
+            feat_idx = torch.unsqueeze(
+                torch.arange(self.data.num_nodes), 1)
+        elif args_feat == 'Null':
+            # Select features whose value is non-null
+            feat_idx = self.data.x[node_index, :].nonzero()
+            self.F = feat_idx.size()[0]
+        else:
+            # Select features whose value is different from dataset mean value
+            std = self.data.x.std(axis=0)
+            mean = self.data.x.mean(axis=0)
+            mean_subgraph = self.data.x[node_index, :]
+            mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
+                                        torch.ones_like(mean_subgraph)*100)
+            mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
+                                        torch.ones_like(mean_subgraph)*100)
+            feat_idx = (mean_subgraph == 100).nonzero()
+            discarded_feat_idx = (mean_subgraph != 100).nonzero()
+            self.F = feat_idx.shape[0]
+            del mean, mean_subgraph, std
+
+        return feat_idx, discarded_feat_idx
+
+    def feature_selection_subgraph(self, node_index, args_feat):
+        """ Similar to feature_selection (above)
+        but considers the feature vector in the subgraph around v 
+        instead of the feature of v
+        """
+        # Specific case: features in subgraph
+        # Determine features and neighbours whose importance is investigated
+        discarded_feat_idx = []
+        if args_feat == 'All':
+            # Consider all features - no selection 
+            self.F = self.data.x[node_index, :].shape[0]
+            feat_idx = torch.unsqueeze(
+                torch.arange(self.data.num_nodes), 1)
+        elif args_feat == 'Null':
+            # Consider only non-zero entries in the subgraph of v
+            feat_idx = self.data.x[self.neighbours, :].mean(
+                axis=0).nonzero()
+            self.F = feat_idx.size()[0]
+        else:
+            # Consider all features away from its mean value
+            std = self.data.x.std(axis=0)
+            mean = self.data.x.mean(axis=0)
+            # Feature intermediate rep
+            mean_subgraph = torch.mean(self.data.x[self.neighbours, :], dim=0)
+            # Select relevant features only - (E-e,E+e)
+            mean_subgraph = torch.where(mean_subgraph >= mean - 0.25*std, mean_subgraph,
+                                        torch.ones_like(mean_subgraph)*100)
+            mean_subgraph = torch.where(mean_subgraph <= mean + 0.25*std, mean_subgraph,
+                                        torch.ones_like(mean_subgraph)*100)
+            feat_idx = (mean_subgraph == 100).nonzero()
+            discarded_feat_idx = (mean_subgraph != 100).nonzero()
+            self.F = feat_idx.shape[0]
+            del mean, mean_subgraph, std
+
+        return feat_idx, discarded_feat_idx
+
+
+    ################################
+    # Mask generator
+    ################################
+
+    def mask_generation(self, num_samples, args_coal, args_K, D, info, regu):
+            """ Applies selected mask generator strategy 
+
+            Args:
+                num_samples (int): number of samples for GraphSVX 
+                args_coal (str): mask generator strategy 
+                args_K (int): size param for indirect effect 
+                D (int): number of nodes considered after selection
+                info (bool): print information or not 
+                regu (int): balances importance granted to nodes and features
+
+            Returns:
+                [tensor] (num_samples, M): dataset of samples/coalitions z' 
+                [tensor] (num_samples): vector of kernel weights corresponding to samples 
+            """
             if args_coal == 'SmarterSeparate':
                 weights = torch.zeros(num_samples, dtype=torch.float64)
                 # Features only
                 num = int(num_samples * self.F/self.M)
-                z_bis = eval('self.' + args_coal)(num,args_K, 1)  
+                z_bis = eval('self.' + args_coal)(num, args_K, 1)  
                 z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                 s = (z_bis != 0).sum(dim=1)
                 weights[:num] = self.shapley_kernel(s, self.F)
@@ -542,42 +405,26 @@ class GraphSVX():
                 del z_bis, s
 
             else:
-                # Necessary argument if we choose to sample all possible coalitions
+                # If we choose to sample all possible coalitions
                 if args_coal == 'All':
                     num_samples = min(10000, 2**self.M)
 
-                ### COALITIONS: sample z' - binary vector of dimension (num_samples, M)
+                # Coalitions: sample num_samples binary vectors of dimension M
                 z_ = eval('self.' + args_coal)(num_samples, args_K, regu)
 
-                # Shuffle z_
+                # Shuffle them 
                 z_ = z_[torch.randperm(z_.size()[0])]
 
                 # Compute |z'| for each sample z': number of non-zero entries
                 s = (z_ != 0).sum(dim=1)
 
-                ### GRAPHSHAP KERNEL: define weights associated with each sample
+                # GraphSVX Kernel: define weights associated with each sample 
                 weights = self.shapley_kernel(s, self.M)
+                if max(weights) > 9 and info:
+                    print('!! Empty or/and full coalition is included !!')
+                
+            return z_, weights
 
-            # Discard full and empty coalition if specified
-            if fullempty:
-                weights[(weights == 1000).nonzero()] = 0
-
-            ### H_V: Create dataset (z', f(hv(z'))=(z', f(z)), stored as (z_, fz)
-            # Retrive z from z' and x_v, then compute f(z)
-            fz = self.graph_classification(
-                graph_index, num_samples, D, z_, args_K, args_feat, true_pred)
-
-            ### g: Weighted Linear Regression to learn shapley values
-            phi, base_value = eval('self.' + args_g)(z_, weights, fz,
-                                                     multiclass, info)
-
-            phi_list.append(phi)
-
-            return phi_list
-
-    ################################
-    # Mask generator
-    ################################
     def SmarterSeparate(self, num_samples, args_K, regu):
         """Default mask sampler
         Generates feature mask and node mask independently
@@ -889,6 +736,7 @@ class GraphSVX():
     ################################
     # Graph generator + compute f(z)
     ################################
+
     def compute_pred_subgraph(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
         """ Construct z from z' and compute prediction f(z) for each sample z'
             In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
@@ -1675,6 +1523,7 @@ class GraphSVX():
     ################################
     # INFO ON EXPLANATIONS
     ################################
+
     def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf, multiclass):
         """
         Displays some information about explanations - for a better comprehension and audit

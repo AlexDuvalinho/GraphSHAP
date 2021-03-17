@@ -101,10 +101,10 @@ def arg_parse():
     # args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
-    parser.set_defaults(dataset='syn6',
+    parser.set_defaults(dataset='PubMed',
                         model='GCN',
                         indexes=[500],
-                        num_samples=200,
+                        num_samples=10,
                         fullempty=None,
                         S=4,
                         hops=2,
@@ -122,7 +122,7 @@ def arg_parse():
                         feat_explainers=['GraphSVX', 'GNNExplainer', 
                                             'GraphLIME', 'LIME', 'SHAP'],
                         node_explainers=['GraphSVX', 'GNNExplainer', 'Greedy'],
-                        test_samples=50,
+                        test_samples=10,
                         K=0.10,
                         prop_noise_feat=0.20,
                         prop_noise_nodes=0.20,
