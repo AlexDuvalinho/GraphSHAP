@@ -183,11 +183,10 @@ def eval_Mutagenicity(data, model, args):
 
 
 def eval_syn6(data, model, args):
-    """Explain and evaluate syn6 dataset
+    """ Explain and evaluate syn6 dataset
     """
     # Define graphs used for evaluation
-    allgraphs = [i for i in range(0, 100)]
-    allgraphs.extend([i for i in range(500, 600)])
+    allgraphs = np.nonzero(data.y).T[0].tolist()[:100]
 
     accuracy = []
     for graph_idx in allgraphs:

@@ -28,7 +28,7 @@ def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_pa
     #sns.set_context("talk")
     ax = sns.distplot(noise_feats, hist=False, kde=True,
                       kde_kws={'label': label}, color=color)
-    sns.set(font_scale=1.2)  # , rc={"lines.linewidth": 2})
+    sns.set(font_scale=1.5)  # , rc={"lines.linewidth": 2})
     plt.xlim(-3, 8)
     plt.ylim(ymin=0.0, ymax=ymax)
 
