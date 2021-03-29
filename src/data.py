@@ -74,8 +74,8 @@ def _get_train_val_test_masks(total_size, y_true, val_fraction, test_fraction, s
     Args:
         total_size (int): dataset total number of instances
         y_true (numpy array): labels
-        val_fraction (int): validation set proportion
-        test_fraction (int): test set proportion
+        val_fraction (int): validation/test set proportion
+        test_fraction (int): test and val sets proportion
         seed (int): seed value
 
     Returns:

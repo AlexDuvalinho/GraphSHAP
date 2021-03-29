@@ -18,12 +18,6 @@ import numpy as np
 import os 
 import warnings
 
-import utils.io_utils as io_utils
-import src.models as models
-from types import SimpleNamespace
-import torch_geometric
-
-
 warnings.filterwarnings("ignore")
 
 
@@ -33,8 +27,6 @@ def main():
     fix_seed(args.seed)
 
     # Load the dataset
-    args.save = True
-    args.dataset='syn6'
     data = prepare_data(args.dataset, args.seed)
 
     # Define and train the model
@@ -58,6 +50,8 @@ def main():
                             dropout=args.dropout,
                             args=args)
         train_gc(data, model, args)
+        _, test_acc = evaluate(data, model, data.test_mask)
+        print('Test accuracy is {:.4f}'.format(test_acc))
 
     else: 
         # For pytorch geometric model 
@@ -73,6 +67,8 @@ def main():
                                 dropout=args.dropout,
                                 args=args)
         train_syn(data, model, args)
+        _, test_acc = evaluate(data, model, data.test_mask)
+        print('Test accuracy is {:.4f}'.format(test_acc))
     
     # Save model 
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
