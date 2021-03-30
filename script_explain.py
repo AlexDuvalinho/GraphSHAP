@@ -1,16 +1,20 @@
+""" script_explain.py
+
+    Derive explanations using GraphSVX 
+"""
+
 import argparse
 import random
-import warnings
 import numpy as np
 import torch
+import warnings
+warnings.filterwarnings("ignore")
 
 import configs
 from utils.io_utils import fix_seed
 from src.data import prepare_data
 from src.explainers import GraphSVX
 from src.train import evaluate, test
-
-warnings.filterwarnings("ignore")
 
 
 def main():
@@ -19,7 +23,8 @@ def main():
     fix_seed(args.seed)
 
     # Load the dataset
-    data = prepare_data(args.dataset, args.seed)
+    data = prepare_data(args.dataset, args.train_ratio,
+                        args.input_dim, args.seed)
 
     # Load the model
     model_path = 'models/{}_model_{}.pth'.format(args.model, args.dataset)
@@ -65,7 +70,8 @@ def main():
                                         args.regu,
                                         True)
 
-    print('Sum explanations: ', np.sum(explanations))
+    print('Sum explanations: ', [np.sum(explanation) for explanation in explanations])
+    print('Base value: ', explainer.base_values)
 
 if __name__ == "__main__":
     main()

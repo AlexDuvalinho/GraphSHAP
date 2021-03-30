@@ -5,16 +5,11 @@
     Check how frequently they appear in explanations
 """
 
-import torch
-import warnings
-from tqdm import tqdm
-import numpy as np
-
-warnings.filterwarnings('ignore')
-
 import matplotlib.pyplot as plt
-
+import numpy as np
+import torch
 from torch_geometric.nn import GNNExplainer as GNNE
+from tqdm import tqdm
 
 from src.data import (add_noise_features, add_noise_neighbours,
                       extract_test_nodes, prepare_data)
@@ -25,13 +20,11 @@ from src.plots import plot_dist
 from src.train import accuracy, train_and_val
 from src.utils import *
 
-
 ###############################################################################
 
 
-def filter_useless_features_multiclass(seed,
+def filter_useless_features_multiclass(args_dataset,
                                        args_model,
-                                       args_dataset,
                                        args_explainers,
                                        args_hops,
                                        args_num_samples,
@@ -49,7 +42,8 @@ def filter_useless_features_multiclass(seed,
                                        args_regu,
                                        args_gpu,
                                        args_fullempty,
-                                       args_S):
+                                       args_S, 
+                                       seed):
     """ Add noisy features to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -272,9 +266,8 @@ def noise_feats_for_random(data, model, args_K, args_num_noise_feat, node_indice
 ###############################################################################
 
 
-def filter_useless_nodes_multiclass(seed,
+def filter_useless_nodes_multiclass(args_dataset,
                                     args_model,
-                                    args_dataset,
                                     args_explainers,
                                     args_hops,
                                     args_num_samples,
@@ -292,7 +285,8 @@ def filter_useless_nodes_multiclass(seed,
                                     args_regu,
                                     args_gpu,
                                     args_fullempty,
-                                    args_S):
+                                    args_S, 
+                                    seed):
     """ Add noisy neighbours to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -572,88 +566,3 @@ def study_attention_weights(data, model, args_test_samples):
             torch.mean(torch.stack(att2[0::2])))
 
     return torch.mean(alpha[1], axis=1)
-
-
-############################################################################
-
-
-def eval_shap(args_dataset,
-              args_model,
-              args_test_samples,
-              args_hops,
-              args_K,
-              args_num_samples,
-              node_indices=None):
-    """
-    Compares SHAP and GraphSVX on graph based datasets
-    Check if they agree on features'contribution towards prediction for several test samples
-    """
-
-    # Define dataset
-    data = prepare_data(args_dataset, seed=10)
-
-    # Select a random subset of nodes to eval the explainer on.
-    if not node_indices:
-        node_indices = extract_test_nodes(data, args_test_samples)
-
-    # Define training parameters depending on (model-dataset) couple
-    hyperparam = ''.join(['hparams_', args_dataset, '_', args_model])
-    param = ''.join(['params_', args_dataset, '_', args_model])
-
-    # Define the model
-    if args_model == 'GCN':
-        model = GCN(input_dim=data.x.size(
-            1), output_dim=data.num_classes, **eval(hyperparam))
-    else:
-        model = GAT(input_dim=data.x.size(
-            1), output_dim=data.num_classes, **eval(hyperparam))
-
-    # Re-train the model on dataset with noisy features
-    train_and_val(model, data, **eval(param))
-
-    # Store metrics
-    iou = []
-    prop_contrib_diff = []
-
-    # Iterate over test samples
-    for node_idx in tqdm(node_indices, desc='explain node', leave=False):
-
-        # Define explainers we would like to compare
-        graphshap = GraphSVX(data, model)
-        shap = SHAP(data, model)
-
-        # Explanations via GraphSVX
-        graphshap_coefs = graphshap.explain(node_index=node_idx,
-                                            hops=args_hops,
-                                            num_samples=args_num_samples,
-                                            info=False)
-
-        shap_coefs = shap.explain(node_index=node_idx,
-                                  hops=args_hops,
-                                  num_samples=args_num_samples,
-                                  info=False)
-
-        # Consider node features only - for predicted class only
-        true_conf, predicted_class = model(x=data.x, edge_index=data.edge_index).exp()[
-            node_idx].max(dim=0)
-        graphshap_coefs = graphshap_coefs[:graphshap.F, predicted_class]
-        shap_coefs = shap_coefs[:, predicted_class]
-
-        # Need to apply regularisation
-
-        # Proportional contribution
-        prop_contrib_diff.append(np.abs(graphshap_coefs.sum(
-        ) / np.abs(graphshap_coefs).sum() - shap_coefs.sum() / np.abs(shap_coefs).sum()))
-        #print('GraphSVX proportional contribution to pred: {:.2f}'.format(graphshap_coefs.sum() / np.abs(graphshap_coefs).sum() ))
-        #print('SHAP proportional contribution to pred: {:.2f}'.format(shap_coefs.sum() / np.abs(shap_coefs).sum() ))
-
-        # Important features
-        graphshap_feat_indices = np.abs(
-            graphshap_coefs).argsort()[-args_K:].tolist()
-        shap_feat_indices = np.abs(shap_coefs).argsort()[-args_K:].tolist()
-        iou.append(len(set(graphshap_feat_indices).intersection(set(shap_feat_indices))
-                       ) / len(set(graphshap_feat_indices).union(set(shap_feat_indices))))
-        #print('Iou important features: ', iou)
-
-    print('iou av:', np.mean(iou))
-    print('difference in contibutions towards pred: ', np.mean(prop_contrib_diff))

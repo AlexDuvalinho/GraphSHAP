@@ -5,7 +5,6 @@
 # Import packages
 import random
 import time
-import warnings
 from copy import deepcopy
 from itertools import combinations
 
@@ -28,7 +27,6 @@ from src.models import LinearRegressionModel
 from src.plots import (denoise_graph, k_hop_subgraph, log_graph,
                        visualize_subgraph, custom_to_networkx)
 
-warnings.filterwarnings("ignore")
 
 
 class GraphSVX():
@@ -40,6 +38,7 @@ class GraphSVX():
         self.neighbours = None  #  nodes considered
         self.F = None  # number of features considered
         self.M = None  # number of features and nodes considered
+        self.base_values = []
 
         self.model.eval()
 
@@ -145,7 +144,7 @@ class GraphSVX():
 
             # Discard full and empty coalition if specified
             if fullempty:
-                weights[(weights == 1000).nonzero()] = 0
+                weights[weights == 1000] = 0
 
             # --- GRAPH GENERATOR --- 
             # Create dataset (z', f(GEN(z'))), stored as (z_, fz)
@@ -168,9 +167,8 @@ class GraphSVX():
 
             # Print information
             if info:
-                print('Base value', base_value, 'for class ', true_pred.item())
                 self.print_info(D, node_index, phi, feat_idx,
-                                true_pred, true_conf, multiclass)
+                                true_pred, true_conf, base_value, multiclass)
 
             # Visualise
             if vizu:
@@ -184,6 +182,7 @@ class GraphSVX():
 
             # Append explanations for this node to list of expl.
             phi_list.append(phi)
+            self.base_values.append(base_value)
 
         return phi_list
 
@@ -324,7 +323,6 @@ class GraphSVX():
             feat_idx = (mean_subgraph == 100).nonzero()
             discarded_feat_idx = (mean_subgraph != 100).nonzero()
             self.F = feat_idx.shape[0]
-            del mean, mean_subgraph, std
 
         return feat_idx, discarded_feat_idx
 
@@ -386,8 +384,13 @@ class GraphSVX():
             """
             if args_coal == 'SmarterSeparate':
                 weights = torch.zeros(num_samples, dtype=torch.float64)
+                if self.F==0 or D==0:
+                    num = int(num_samples * self.F/self.M)
+                elif regu != None:
+                    num = int( num_samples * ( self.F/self.M + ((regu - 0.5)/0.5)  * (self.F/self.M) ) )    
+                else: 
+                    num = int(0.25* num_samples/2 + 0.5 * num_samples * self.F/self.M)
                 # Features only
-                num = int(num_samples * self.F/self.M)
                 z_bis = eval('self.' + args_coal)(num, args_K, 1)  
                 z_bis = z_bis[torch.randperm(z_bis.size()[0])]
                 s = (z_bis != 0).sum(dim=1)
@@ -402,7 +405,6 @@ class GraphSVX():
                 weights[num:] = self.shapley_kernel(s, D)
                 z_[num:, :] = torch.ones(num_samples-num, self.M)
                 z_[num:, self.F:] = z_bis
-                del z_bis, s
 
             else:
                 # If we choose to sample all possible coalitions
@@ -420,8 +422,6 @@ class GraphSVX():
 
                 # GraphSVX Kernel: define weights associated with each sample 
                 weights = self.shapley_kernel(s, self.M)
-                if max(weights) > 9 and info:
-                    print('!! Empty or/and full coalition is included !!')
                 
             return z_, weights
 
@@ -717,18 +717,19 @@ class GraphSVX():
                 [tensor]: shapley kernel value for each sample
         """
         shapley_kernel = []
-        # Loop around elements of s in order to specify a special case
-        # Otherwise could have procedeed with tensor s direclty
+
         for i in range(s.shape[0]):
             a = s[i].item()
-            # Put an emphasis on samples where all or none features are included
             if a == 0 or a == M:
+                # Enforce high weight on full/empty coalitions
                 shapley_kernel.append(1000)
             elif scipy.special.binom(M, a) == float('+inf'):
-                shapley_kernel.append(1/M)
+                # Treat specific case - impossible computation
+                shapley_kernel.append(1/ (M**2))
             else:
                 shapley_kernel.append(
                     (M-1)/(scipy.special.binom(M, a)*a*(M-a)))
+
         shapley_kernel = np.array(shapley_kernel)
         shapley_kernel = np.where(shapley_kernel<1.0e-40, 1.0e-40,shapley_kernel)
         return torch.tensor(shapley_kernel)
@@ -751,23 +752,24 @@ class GraphSVX():
         """
         # Create networkx graph
         G = custom_to_networkx(self.data)
+        G = G.subgraph(self.neighbours.tolist() + [node_index])
 
-        # We need to recover z from z' - wrt sampled neighbours and node features
-        # Initialise new node feature vectors and neighbours to disregard
+        # Define an "average" feature vector - for discarded features
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
-            # 'All' and 'Expectation'
+            # Change here for contrastive explanations
+            # av_feat_values = self.data.x[402]
+            # or random feature vector made of random value across each col of X
 
-        # Store nodes and features not sampled
+        # Init dict for nodes and features not sampled
         excluded_feat = {}
         excluded_nei = {}
 
         # Define excluded_feat and excluded_nei for each z'
         for i in range(num_samples):
 
-            # Define new node features dataset (we only modify x_v for now)
             # Store index of features that are not sampled (z_j=0)
             feats_id = []
             for j in range(self.F):
@@ -775,7 +777,6 @@ class GraphSVX():
                     feats_id.append(feat_idx[j].item())
             excluded_feat[i] = feats_id
 
-            # Define new neighbourhood
             # Store index of neighbours that need to be isolated (not sampled, z_j=0)
             nodes_id = []
             for j in range(D):
@@ -795,16 +796,15 @@ class GraphSVX():
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
-            positions = []
             # For each excluded neighbour, retrieve the column index of its occurences
             # in the adj matrix - store them in positions (list)
+            positions = []
             for val in ex_nei:
                 pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
                 positions += pos
-            # Create new adjacency matrix for that sample
             positions = list(set(positions))
             A = np.array(self.data.edge_index)
-            # Special case (0 node, k feat)
+            # Special case (0 node, k feat) 
             # Consider only feat. influence if too few nei included
             if D - len(ex_nei) >= min(self.F - len(ex_feat), args_K):
                 A = np.delete(A, positions, axis=1)
@@ -815,37 +815,38 @@ class GraphSVX():
             X[node_index, ex_feat] = av_feat_values[ex_feat]
             if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
                 X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
-                # May delete - should be an approximation
-                #if args_feat == 'Expectation':
+                
+                # End approximation
+                # if args_feat == 'Expectation':
                 #    for val in discarded_feat_idx:
                 #        X[self.neighbours, val] = av_feat_values[val].repeat(D)
 
             # Special case - consider only nei. influence if too few feat included
             if self.F - len(ex_feat) < min(D - len(ex_nei), args_K):
                 # Don't set features = Exp or 0 in the whole subgraph, only for v.
-
-                # Look at the 2-hop neighbours included
-                # Make sure that they are connected to v (with current nodes sampled nodes)
+            
+                # Indirect effect
                 included_nei = set(
                     self.neighbours.detach().numpy()).difference(ex_nei)
                 included_nei = included_nei.difference(
                     one_hop_neighbours.detach().numpy())
-
                 for incl_nei in included_nei:
-                    l = nx.shortest_path(G, source=node_index, target=incl_nei)
-                    if set(l[1:-1]).isdisjoint(ex_nei):
+                    paths = list(nx.all_shortest_paths(G, source=node_index, target=incl_nei))
+                    np.random.shuffle(paths)
+                    len_paths = [len(set(path[1:-1]).intersection(ex_nei)) for path in paths]
+                    if min(len_paths) == 0: 
                         pass
-                    else:
-                        for n in range(1, len(l)-1):
+                    else: 
+                        path = paths[np.argmin(len_paths)]
+                        for n in range(1, len(path)-1):
                             A = torch.cat((A, torch.tensor(
-                                [[l[n-1]], [l[n]]])), dim=-1)
-                            X[l[n], :] = av_feat_values
+                                            [[path[n-1]], [path[n]]])), dim=-1)
+                            X[path[n], :] = av_feat_values
 
             # Usual case - exclude features for the whole subgraph
             else:
                 for val in ex_feat:
-                    X[self.neighbours, val] = av_feat_values[val].repeat(
-                        D)  # 0
+                    X[self.neighbours, val] = av_feat_values[val].repeat(D)
 
             # Apply model on (X,A) as input.
             if self.gpu:
@@ -878,90 +879,89 @@ class GraphSVX():
                 (tensor): f(z) - probability of belonging to each target classes, for all samples z
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
+        # Create a networkx graph 
         G = custom_to_networkx(self.data)
+        G = G.subgraph(self.neighbours.tolist() + [node_index])
 
-        # We need to recover z from z' - wrt sampled neighbours and node features
-        # Initialise new node feature vectors and neighbours to disregard
+        # Define an "average" feature vector - for discarded features
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
-            #av_feat_values = self.data.x[402]
-        # or random feature vector made of random value across each col of X
-        # NOTE: change hier for constrastive explanation
+            # Change here for contrastive explanations
+            # av_feat_values = self.data.x[402]
+            # or random feature vector made of random value across each col of X
 
+        # Store discarded nodes/features (z'_j=0) for each sample z' 
         excluded_feat = {}
         excluded_nei = {}
-
-        # Define excluded_feat and excluded_nei for each z'
         for i in range(num_samples):
 
-            # Define new node features dataset (we only modify x_v for now)
-            # Store index of features that are not sampled (z_j=0)
+            # Excluded features' indexes 
             feats_id = []
             for j in range(self.F):
                 if z_[i, j].item() == 0:
                     feats_id.append(feat_idx[j].item())
             excluded_feat[i] = feats_id
 
-            # Define new neighbourhood
-            # Store index of neighbours that need to be isolated (not sampled, z_j=0)
+            # Excluded neighbors' indexes 
             nodes_id = []
             for j in range(D):
                 if z_[i, self.F+j] == 0:
                     nodes_id.append(self.neighbours[j].item())
-            # Dico with key = num_sample id, value = excluded neighbour index
             excluded_nei[i] = nodes_id
+            # Dico with key = num_sample id, value = excluded neighbour index
 
-        # Init label f(z) for graphshap dataset - consider all classes
+        # Init label f(z) for graphshap dataset
         if multiclass:
+            # Allows to explain why one class was not chosen 
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
             fz = torch.zeros(num_samples)
 
-        # Create new matrix A and X - for each sample ≈ reform z from z'
+        # Construct new matrices A and X for each sample - reform z from z'
         for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
+            # Isolate in the graph each node excluded from the sampled coalition
             positions = []
-            # For each excluded neighbour, retrieve the column index of its occurences
-            # in the adj matrix - store them in positions (list)
             for val in ex_nei:
                 pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
                 positions += pos
-            # Create new adjacency matrix for that sample
             positions = list(set(positions))
             A = np.array(self.data.edge_index)
             A = np.delete(A, positions, axis=1)
             A = torch.tensor(A)
-
-            # Change feature vector for node of interest
+ 
+            # Set features not in the sampled coalition to an average value
             X = deepcopy(self.data.x)
             X[node_index, ex_feat] = av_feat_values[ex_feat]
 
-            # TODO: eval if better with below specific case or if approx is good enough
             # Discared features approximation
-            # if args_feat != 'Null' and discarded_feat_idx!=[] and len(self.neighbours) - len(ex_nei) < args_K:
+            # if args_feat != 'Null' and discarded_feat_idx!=[] and D - len(ex_nei) < args_K:
             #     X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 
             # Indirect effect - if few included neighbours
             # Make sure that they are connected to v (with current nodes sampled nodes)
-            if 0 < len(self.neighbours) - len(ex_nei) < args_K:
+            if 0 < D - len(ex_nei) < args_K:
                 included_nei = set(
                     self.neighbours.detach().numpy()).difference(ex_nei)
                 included_nei = included_nei.difference(
                     one_hop_neighbours.detach().numpy())
                 for incl_nei in included_nei:
-                    l = nx.shortest_path(G, source=node_index, target=incl_nei)
-                    if set(l[1:-1]).isdisjoint(ex_nei):
+                    paths = list(nx.all_shortest_paths(G, source=node_index, target=incl_nei))
+                    np.random.shuffle(paths)
+                    len_paths = [len(set(path[1:-1]).intersection(ex_nei)) for path in paths]
+                    if min(len_paths) == 0: 
                         pass
-                    else:
-                        for n in range(1, len(l)-1):
+                    else: 
+                        path = paths[np.argmin(len_paths)]
+                        for n in range(1, len(path)-1):
                             A = torch.cat((A, torch.tensor(
-                                [[l[n-1]], [l[n]]])), dim=-1)
-                            X[l[n], :] = X[node_index, :]  # av_feat_values
+                                            [[path[n-1]], [path[n]]])), dim=-1)
+                            X[path[n], :] = X[node_index, :]  # av_feat_values
                             # TODO: eval this against av.values.
 
-            # Apply model on (X,A) as input.
+            # Apply model on new (X,A) 
             if self.gpu:
                 with torch.no_grad():
                     proba = self.model(X.cuda(), A.cuda()).exp()[node_index]
@@ -984,36 +984,32 @@ class GraphSVX():
 
         Args:
             Variables are defined exactly as defined in explainer function
+            Note that adjacency matrices are dense (square) matrices (unlike node classification)
 
         Returns:
             (tensor): f(z) - probability of belonging to each target classes, for all samples z
             Dimension (N * C) where N is num_samples and C num_classses.
         """
-        # Softmax
-        # fct = torch.nn.Softmax(dim=0)
-
-        excluded_feat = {}
+        # Store discarded nodes (z'_j=0) for each sample z' 
         excluded_nei = {}
-
-        # Define excluded_feat and excluded_nei for each z'
         for i in range(num_samples):
-            # Define new neighbourhood
-            # Store index of neighbours that need to be isolated (not sampled, z_j=0)
+            # Excluded nodes' indexes 
             nodes_id = []
             for j in range(D):
                 if z_[i, self.F+j] == 0:
                     nodes_id.append(self.neighbours[j])
-            # Dico with key = num_sample id, value = excluded neighbour index
             excluded_nei[i] = nodes_id
+            # Dico with key = num_sample id, value = excluded neighbour index
 
-        # Init
+        # Init 
         fz = torch.zeros(num_samples)
-
-        #av_feat_values = self.data.x.mean(dim=0)
-        #av_feat_values = np.mean(self.data.x[graph_index],axis=0)
-        av_feat_values = torch.zeros(self.data.x[graph_index].shape[1])
         adj = deepcopy(self.data.edge_index[graph_index])
-
+        if args_feat == 'Null':
+            av_feat_values = torch.zeros(self.data.x[graph_index].shape[1])
+        else: 
+            av_feat_values = self.data.x.mean(dim=0).mean(dim=0)
+            #av_feat_values = np.mean(self.data.x[graph_index],axis=0)
+        
         # Create new matrix A and X - for each sample ≈ reform z from z'
         for (key, ex_nei) in tqdm(excluded_nei.items()):
 
@@ -1022,7 +1018,7 @@ class GraphSVX():
             A[ex_nei, :] = 0
             A[:, ex_nei] = 0
 
-            # Also change features of excluded nodes
+            # Also change features of excluded nodes (optional)
             X = deepcopy(self.data.x[graph_index])
             for nei in ex_nei:
                 X[nei] = av_feat_values
@@ -1052,34 +1048,31 @@ class GraphSVX():
                 (tensor): f(z) - probability of belonging to each target classes, for all samples z
                 Dimension (N * C) where N is num_samples and C num_classses.
         """
+        # Define an "average" feature vector - for discarded features
         if args_feat == 'Null':
             av_feat_values = torch.zeros(self.data.num_features)
         else:
             av_feat_values = self.data.x.mean(dim=0)
 
-        # or random feature vector made of random value across each col of X
+        # Define excluded_feat and excluded_nei for each z'
         excluded_feat = {}
         excluded_nei = {}
-
-        # Define excluded_feat and excluded_nei for each z'
         for i in range(num_samples):
 
-            # Define new node features dataset (we only modify x_v for now)
-            # Store index of features that are not sampled (z_j=0)
+            # Excluded features' indexes 
             feats_id = []
             for j in range(self.F):
                 if z_[i, j].item() == 0:
                     feats_id.append(feat_idx[j].item())
             excluded_feat[i] = feats_id
 
-            # Define new neighbourhood
-            # Store index of neighbours that need to be isolated (not sampled, z_j=0)
+            # Excluded neighbors' indexes 
             nodes_id = []
             for j in range(D):
                 if z_[i, self.F+j] == 0:
                     nodes_id.append(self.neighbours[j].item())
-            # Dico with key = num_sample id, value = excluded neighbour index
             excluded_nei[i] = nodes_id
+            # Dico with key = num_sample id, value = excluded neighbour index
 
         # Init label f(z) for graphshap dataset - consider all classes
         if multiclass:
@@ -1087,16 +1080,15 @@ class GraphSVX():
         else:
             fz = torch.zeros(num_samples)
 
-        # Create new matrix A and X - for each sample ≈ reform z from z'
+        # Construct new matrices A and X for each sample - reform z from z'
         for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
-            positions = []
             # For each excluded neighbour, retrieve the column index of its occurences
             # in the adj matrix - store them in positions (list)
+            positions = []
             for val in ex_nei:
                 pos = (self.data.edge_index == val).nonzero()[:, 1].tolist()
                 positions += pos
-            # Create new adjacency matrix for that sample
             positions = list(set(positions))
             A = np.array(self.data.edge_index)
             A = np.delete(A, positions, axis=1)
@@ -1110,17 +1102,19 @@ class GraphSVX():
             # if args_feat != 'Null' and discarded_feat_idx != [] and len(self.neighbours) - len(ex_nei) < args_K:
             #     X[node_index, discarded_feat_idx] = av_feat_values[discarded_feat_idx]
 
-            # Features in subgraph
-            # for val in ex_feat:
-            #     X[self.neighbours, val] = av_feat_values[val].repeat(D)  # 0
-
              # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[node_index]
+                    proba = self.model(X.cuda(), A.cuda()).exp()[node_index]
             else:
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=A).exp()[node_index]
+                    proba = self.model(X, A).exp()[node_index]
+                
+            # Store predicted class label in fz
+            if multiclass:
+                fz[key] = proba
+            else:
+                fz[key] = proba[true_pred]
 
             # Store predicted class label in fz
             if multiclass:
@@ -1197,11 +1191,11 @@ class GraphSVX():
             # Apply model on (X,A) as input.
             if self.gpu:
                 with torch.no_grad():
-                    proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
+                    proba = self.model(X.cuda(), self.data.edge_index.cuda()).exp()[
                         node_index]
             else: 
                 with torch.no_grad():
-                    proba = self.model(x=X, edge_index=self.data.edge_index).exp()[
+                    proba = self.model(X, self.data.edge_index).exp()[
                         node_index]
 
             # Store predicted class label in fz
@@ -1213,135 +1207,6 @@ class GraphSVX():
         return fz
 
         ################################
-
-    def compute_pred_regu(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
-            Apply regularisation to favour the importance given to nodes or features 
-
-        Args: 
-                Variables are defined exactly as defined in explainer function 
-
-        Returns: 
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
-                Dimension (N * C) where N is num_samples and C num_classses. 
-        """
-        # To networkx
-        G = custom_to_networkx(self.data)
-
-        # We need to recover z from z' - wrt sampled neighbours and node features
-        # Initialise new node feature vectors and neighbours to disregard
-        if args_feat == 'Null':
-            av_feat_values = torch.zeros(self.data.num_features)
-        else:
-            av_feat_values = self.data.x.mean(dim=0)
-
-        # Init label f(z) for graphshap dataset - consider all classes
-        if multiclass:
-            fz = torch.zeros((num_samples, self.data.num_classes))
-        else:
-            fz = torch.zeros(num_samples)
-
-
-        ### Look only at features
-        # TODO: check if regu==1 would work
-        if self.M == self.F:
-            excluded_feat = {}
-
-            for i in range(num_samples):
-                feats_id = []
-                for j in range(self.F):
-                    if z_[i, j].item() == 0:
-                        feats_id.append(feat_idx[j].item())
-                excluded_feat[i] = feats_id
-
-            for key, ex_feat in tqdm(excluded_feat.items()):
-                # Change feature vector for node of interest - excluded and discarded features
-                X = deepcopy(self.data.x)
-                X[node_index, ex_feat] = av_feat_values[ex_feat]
-
-                # Features in subgraph
-                #for val in ex_feat:
-                #    X[self.neighbours, val] = av_feat_values[val].repeat(D)
-
-                # Apply model on (X,A) as input.
-                if self.gpu:
-                    with torch.no_grad():
-                        proba = self.model(x=X.cuda(), edge_index=self.data.edge_index.cuda()).exp()[
-                            node_index]
-                else:
-                    with torch.no_grad():
-                        proba = self.model(x=X, edge_index=self.data.edge_index).exp()[
-                            node_index]
-
-            # Store predicted class label in fz
-            if multiclass:
-                fz[key] = proba
-            else:
-                fz[key] = proba[true_pred]
-
-        ### Look only at neighbours
-        elif self.M == len(self.neighbours):
-            excluded_nei = {}
-
-            for i in range(num_samples):
-                nodes_id = []
-                for j in range(D):
-                    if z_[i, j] == 0:
-                        nodes_id.append(self.neighbours[j].item())
-                # Dico with key = num_sample id, value = excluded neighbour index
-                excluded_nei[i] = nodes_id
-
-            for key, ex_nei in tqdm(excluded_nei.items()):
-                positions = []
-                for val in ex_nei:
-                    pos = (self.data.edge_index == val).nonzero()[
-                        :, 1].tolist()
-                    positions += pos
-                # Create new adjacency matrix for that sample
-                positions = list(set(positions))
-                A = np.array(self.data.edge_index)
-                A = np.delete(A, positions, axis=1)
-                A = torch.tensor(A)
-                X = deepcopy(self.data.x)
-
-                # Look at the 2-hop neighbours included
-                # Make sure that they are connected to v (with current nodes sampled nodes)
-                if 0 < len(self.neighbours) - len(ex_nei) < args_K:
-                    included_nei = set(
-                        self.neighbours.detach().numpy()).difference(ex_nei)
-                    included_nei = included_nei.difference(
-                        one_hop_neighbours.detach().numpy())
-                    for incl_nei in included_nei:
-                        l = nx.shortest_path(
-                            G, source=node_index, target=incl_nei)
-                        if set(l[1:-1]).isdisjoint(ex_nei):
-                            pass
-                        else:
-                            for n in range(1, len(l)-1):
-                                A = torch.cat((A, torch.tensor(
-                                    [[l[n-1]], [l[n]]])), dim=-1)
-                                X[l[n], :] = X[node_index, :]  # av_feat_values
-                # Apply model on (X,A) as input.
-                if self.gpu:
-                    with torch.no_grad():
-                        proba = self.model(x=X.cuda(), edge_index=A.cuda()).exp()[
-                            node_index]
-                else:
-                    with torch.no_grad():
-                        proba = self.model(x=X, edge_index=A).exp()[node_index]
-
-                # Store predicted class label in fz
-                if multiclass:
-                    fz[key] = proba
-                else:
-                    fz[key] = proba[true_pred]
-
-        else:
-            fz = self.compute_pred(node_index, num_samples, D, z_, feat_idx,
-                                   one_hop_neighbours, args_K, args_feat, discarded_feat_idx)
-
-        return fz
 
     ################################
     # Explanation Generator
@@ -1372,6 +1237,7 @@ class GraphSVX():
             tmp = np.dot(np.dot(z_.T, np.diag(weights)), z_)
             tmp = np.linalg.inv(
                 tmp + np.diag(10**(-5) * np.random.randn(tmp.shape[1])))
+
         phi = np.dot(tmp, np.dot(
             np.dot(z_.T, np.diag(weights)), fz.detach().numpy()))
 
@@ -1432,7 +1298,7 @@ class GraphSVX():
         z_ = z_.detach().numpy()
         fz = fz.detach().numpy()
         # Fit weighted linear regression
-        reg = Lasso(alpha=0.1)
+        reg = Lasso(alpha=0.01)
         # reg = Lasso()
         reg.fit(z_, fz, weights)
         y_pred = reg.predict(z_)
@@ -1471,25 +1337,25 @@ class GraphSVX():
 
         criterion = torch.nn.MSELoss()
         #optimizer = torch.optim.SGD(our_model.parameters(), lr=0.2)
-        optimizer = torch.optim.Adam(our_model.parameters(), lr=0.2)
+        optimizer = torch.optim.Adam(our_model.parameters(), lr=0.001)
 
         # Dataloader
-        train = torch.utils.data.TensorDataset(z_, fz)
-        train_loader = torch.utils.data.DataLoader(train, batch_size=20)
+        train = torch.utils.data.TensorDataset(z_, fz, weights)
+        train_loader = torch.utils.data.DataLoader(train, batch_size=1)
 
         # Repeat for several epochs
         for epoch in range(100):
 
             av_loss = []
             #for x,y,w in zip(z_,fz, weights):
-            for batch_idx, (dat, target) in enumerate(train_loader):
-                x, y = Variable(dat), Variable(target)
+            for batch_idx, (dat, target, w) in enumerate(train_loader):
+                x, y, w = Variable(dat), Variable(target), Variable(w)
 
                 # Forward pass: Compute predicted y by passing x to the model
                 pred_y = our_model(x)
 
                 # Compute loss
-                loss = weighted_mse_loss(pred_y, y, weights[batch_idx])
+                loss = weighted_mse_loss(pred_y, y, w)
                 #loss = criterion(pred_y,y)
 
                 # Zero gradients, perform a backward pass, and update the weights.
@@ -1499,7 +1365,7 @@ class GraphSVX():
 
                 # Store batch loss
                 av_loss.append(loss.item())
-            if info:
+            if epoch % 10 ==0 and info:
                 print('av loss epoch: ', np.mean(av_loss))
 
         # Evaluate model
@@ -1516,7 +1382,7 @@ class GraphSVX():
         phi, base_value = [param.T for _,
                            param in our_model.named_parameters()]
         phi = np.squeeze(phi, axis=1)
-        return phi.detach().numpy().astype('float64'), base_value
+        return phi.detach().numpy().astype('float64'), base_value.detach().numpy().astype('float64')
  
         ################################
 
@@ -1524,18 +1390,20 @@ class GraphSVX():
     # INFO ON EXPLANATIONS
     ################################
 
-    def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf, multiclass):
+    def print_info(self, D, node_index, phi, feat_idx, true_pred, true_conf, base_value, multiclass):
         """
         Displays some information about explanations - for a better comprehension and audit
         """
-
         # Print some information
         print('Explanations include {} node features and {} neighbours for this node\
         for {} classes'.format(self.F, D, self.data.num_classes))
 
         # Compare with true prediction of the model - see what class should truly be explained
-        print('Prediction of orignal model is class {} with confidence {}, while label is {}'
+        print('Model prediction is class {} with confidence {}, while true label is {}'
               .format(true_pred, true_conf, self.data.y[node_index]))
+
+        # Print base value
+        print('Base value', base_value, 'for class ', true_pred.item())
 
         # Isolate explanations for predicted class - explain model choices
         if multiclass:
@@ -1549,8 +1417,12 @@ class GraphSVX():
         # Motivation for regularisation
         print('Weights for node features: ', sum(pred_explanation[:self.F]),
               'and neighbours: ', sum(pred_explanation[self.F:]))
-        print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[:self.F])),
-              'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
+        #print('Total Weights (abs val) for node features: ', sum(np.abs(pred_explanation[:self.F])),
+        #      'and neighbours: ', sum(np.abs(pred_explanation[self.F:])))
+
+        # Proportional importance granted to graph structure vs node features of v
+        #print('Feature importance wrt explainable part: {} %'.format( 100 * sum(pred_explanation[:self.F]) / (true_pred.item())))
+        #print('Node importance wrt explainable part: {} %'.format(100* sum(pred_explanation[self.F:]) / (true_pred.item())) )
 
         # Note we focus on explanation for class predicted by the model here, so there is a bias towards
         # positive weights in our explanations (proba is close to 1 everytime).
@@ -1610,15 +1482,13 @@ class GraphSVX():
             phi = torch.from_numpy(phi).float()
 
         # Replace False by 0, True by 1 in edge_mask
-        mask = torch.zeros(self.data.edge_index.shape[1])
-        for i, val in enumerate(edge_mask):
-            if val.item() == True:
-                mask[i] = 1
+        mask = edge_mask.int().float()
 
-        # Identify one-hop neighbour
+        # Identify one-hop subgraph around node_index
         one_hop_nei, _, _, _ = torch_geometric.utils.k_hop_subgraph(
             node_index, 1, self.data.edge_index, relabel_nodes=True,
             num_nodes=None)
+        #true_one_hop_nei = one_hop_nei[one_hop_nei != node_index]
 
         # Attribute phi to edges in subgraph bsed on the incident node phi value
         for i, nei in enumerate(self.neighbours):
@@ -1628,8 +1498,6 @@ class GraphSVX():
                 if nei in one_hop_nei:
                     if self.data.edge_index[1, idx] in one_hop_nei:
                         mask[idx] = phi[self.F + i]
-                    else:
-                        pass
                 elif mask[idx] == 1:
                     mask[idx] = phi[self.F + i]
             #mask[mask.nonzero()[i].item()]=phi[i, predicted_class]
@@ -1639,6 +1507,7 @@ class GraphSVX():
 
         # Increase coef for visibility and consider absolute contribution
         mask = torch.abs(mask)
+        mask = mask / sum(mask)
 
         # Vizu nodes
         ax, G = visualize_subgraph(self.model,
@@ -1677,7 +1546,7 @@ class GraphSVX():
 
 
 ################################
-# BASELINES
+# SOME BASELINES
 ################################
 
 class Greedy:

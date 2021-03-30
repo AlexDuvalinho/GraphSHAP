@@ -7,17 +7,19 @@ import argparse
 import os
 import warnings
 import torch
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 import configs 
 from src.data import prepare_data, selected_data
 from src.eval import eval_Mutagenicity, eval_syn, eval_syn6
+from utils.io_utils import fix_seed
 
-warnings.filterwarnings("ignore")
 
-def main():
+def main(): 
 
     # Load a configuration
     args = configs.arg_parse()
+    fix_seed(args.seed)
 
     # GPU or CPU
     if args.gpu:
@@ -26,7 +28,7 @@ def main():
         print("Using CPU")
 
     # Load dataset
-    data = prepare_data(args.dataset, args.seed)
+    data = prepare_data(args.dataset, args.train_ratio, args.input_dim, args.seed)
     
     # Load model 
     model_path = 'models/GCN_model_{}.pth'.format(args.dataset)

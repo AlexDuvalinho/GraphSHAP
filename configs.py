@@ -101,10 +101,10 @@ def arg_parse():
     # args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
-    parser.set_defaults(dataset='PubMed',
+    parser.set_defaults(dataset='syn4',
                         model='GCN',
-                        indexes=[500],
-                        num_samples=10,
+                        indexes=[500, 10],
+                        num_samples=300,
                         fullempty=None,
                         S=4,
                         hops=2,

@@ -1,7 +1,6 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-import warnings
 
 from copy import copy
 from math import sqrt
@@ -11,8 +10,6 @@ import networkx as nx
 from torch_geometric.nn import MessagePassing
 from torch_geometric.data import Data
 from torch_geometric.utils import k_hop_subgraph, to_networkx, subgraph
-
-warnings.filterwarnings("ignore")
 
 
 def plot_dist(noise_feats, label=None, ymax=1.1, color=None, title=None, save_path=None):
@@ -68,15 +65,15 @@ def visualize_subgraph(model, node_idx, edge_index, edge_mask, num_hops, y=None,
 
     :rtype: :class:`matplotlib.axes.Axes`, :class:`networkx.DiGraph`
     """
-
     assert edge_mask.size(0) == edge_index.size(1)
+    edge_index = edge_index[:, edge_mask.nonzero().T[0]]
 
     # Only operate on a k-hop subgraph around `node_idx`.
     subset, edge_index, _, hard_edge_mask = k_hop_subgraph(
         node_idx, num_hops, edge_index, relabel_nodes=True,
         num_nodes=None, flow=__flow__(model))
 
-    edge_mask = edge_mask[hard_edge_mask]
+    # edge_mask = edge_mask[hard_edge_mask]
 
     if threshold is not None:
         edge_mask = (edge_mask >= threshold).to(torch.float)
@@ -87,7 +84,7 @@ def visualize_subgraph(model, node_idx, edge_index, edge_mask, num_hops, y=None,
     else:
         y = y[subset].to(torch.float) / y.max().item()
 
-    data = Data(edge_index=edge_index, att=edge_mask, y=y,
+    data = Data(edge_index=edge_index, att=edge_mask[edge_mask!=0], y=y,
                 num_nodes=y.size(0)).to('cpu')
     G = to_networkx(data, node_attrs=['y'], edge_attrs=['att'])
     mapping = {k: i for k, i in enumerate(subset.tolist())}
@@ -108,7 +105,7 @@ def visualize_subgraph(model, node_idx, edge_index, edge_mask, num_hops, y=None,
             '', xy=pos[target], xycoords='data', xytext=pos[source],
             textcoords='data', arrowprops=dict(
                 arrowstyle="->",
-                alpha=max(data['att'], 0.1),
+                alpha=max(data['att']*2, 0.05),
                 shrinkA=sqrt(node_kwargs['node_size']) / 2.0,
                 shrinkB=sqrt(node_kwargs['node_size']) / 2.0,
                 connectionstyle="arc3,rad=0.1",
@@ -131,8 +128,10 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
             - theshold_num      :  The maximum number of nodes to threshold.
     """
     # Subgraph with only relevant nodes - pytorch
+    edge_index = data.edge_index[:, weighted_edge_mask.nonzero().T[0]]
+
     s = subgraph(
-        torch.cat((torch.tensor([node_idx]), neighbours)), data.edge_index)[0]
+        torch.cat((torch.tensor([node_idx]), neighbours)), edge_index)[0]
     
     # Disregard size of explanations
     node_explanations = np.abs(node_explanations)
@@ -154,23 +153,24 @@ def denoise_graph(data, weighted_edge_mask, node_explanations, neighbours, node_
     threshold = np.sort(
         node_explanations)[-threshold_num]
 
-    # # Keep edges that satisfy the threshold
+    # Add edges 
     # weighted_edge_list = [
-    #     (data.edge_index[0, i].item(),
-    #      data.edge_index[1, i].item(), weighted_edge_mask[i].item())
-    #     for i, _ in enumerate(weighted_edge_mask)
-    #     if weighted_edge_mask[i] >= threshold
-    # ]
-
-    # Keep edges that satisfy the threshold
-    node_expl_dico = {}
-    for i, imp in enumerate(node_explanations):
-        node_expl_dico[neighbours[i].item()] = imp 
-    node_expl_dico[node_idx]=torch.tensor(0)
-    weighted_edge_list = [ (el1.item(),el2.item(),node_expl_dico[el1.item()].item()) for el1,el2 in zip(s[0],s[1])
-    ]
-    # Remove edges from node of interest to neighbours
-    weighted_edge_list = [item for item in weighted_edge_list if item[0] != 0]
+    #      (data.edge_index[0, i].item(),
+    #       data.edge_index[1, i].item(), weighted_edge_mask[i].item())
+    #      for i, _ in enumerate(weighted_edge_mask)
+        # if weighted_edge_mask[i] >= threshold
+    #  ]
+    
+    # # Keep edges that satisfy the threshold
+    # node_expl_dico = {}
+    # for i, imp in enumerate(node_explanations):
+    #     node_expl_dico[neighbours[i].item()] = imp 
+    # node_expl_dico[node_idx]=torch.tensor(0)
+    # weighted_edge_list = [ (el1.item(),el2.item(),node_expl_dico[el1.item()].item()) for el1,el2 in zip(s[0],s[1]) ]
+    
+    # Add edges 
+    imp = weighted_edge_mask[weighted_edge_mask != 0]
+    weighted_edge_list = [ (el1.item(), el2.item(),i.item()) for el1, el2, i in (zip(s[0], s[1], imp)) ]
     G.add_weighted_edges_from(weighted_edge_list)
 
     # Keep nodes that satisfy the threshold

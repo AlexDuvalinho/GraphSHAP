@@ -4,21 +4,20 @@
 	on the given dataset. 
 """
 
-from src.utils import *
-from src.train import train_and_val, evaluate, train_syn, train_gc
-from src.models import GAT, GCN, GCNNet, GcnEncoderGraph, GcnEncoderNode
-from src.data import prepare_data
-from utils.io_utils import fix_seed
 import argparse
+import os
 import random
-import torch
-import configs
-
 import numpy as np
-import os 
+import torch
 import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-warnings.filterwarnings("ignore")
+import configs
+from src.data import prepare_data
+from src.models import GAT, GCN, GcnEncoderGraph, GcnEncoderNode, GCNNet
+from src.train import evaluate, train_and_val, train_gc, train_syn
+from src.utils import *
+from utils.io_utils import fix_seed
 
 
 def main():
@@ -27,7 +26,7 @@ def main():
     fix_seed(args.seed)
 
     # Load the dataset
-    data = prepare_data(args.dataset, args.seed)
+    data = prepare_data(args.dataset, args.train_ratio, args.input_dim, args.seed)
 
     # Define and train the model
     if args.dataset in ['Cora', 'PubMed']:

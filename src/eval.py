@@ -7,7 +7,6 @@
 
 import argparse
 import os
-import warnings
 from datetime import datetime
 
 import numpy as np
@@ -25,7 +24,6 @@ from src.explainers import (LIME, SHAP, GNNExplainer, GraphLIME, GraphSVX,
                             Greedy, Random)
 from src.plots import plot_dist
 
-warnings.filterwarnings('ignore')
 
 
 ###############################################################################
@@ -234,9 +232,8 @@ def eval_syn6(data, model, args):
 # Noisy features eval on real world datasets 
 ############################################################################
 
-def filter_useless_features(seed,
+def filter_useless_features(args_dataset,
                             args_model,
-                            args_dataset,
                             args_explainers,
                             args_hops,
                             args_num_samples,
@@ -253,7 +250,8 @@ def filter_useless_features(seed,
                             args_regu,
                             args_gpu,
                             args_fullempty,
-                            args_S):
+                            args_S, 
+                            seed):
     """ Add noisy features to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -263,7 +261,7 @@ def filter_useless_features(seed,
     """
 
     # Define dataset 
-    data = prepare_data(args_dataset, seed)
+    data = prepare_data(args_dataset, seed=seed)
     args_num_noise_feat = int(data.x.size(1) * args_prop_noise_feat)
     args_p = eval('EVAL1_' + data.name)['args_p']
     args_binary = eval('EVAL1_' + data.name)['args_binary']
@@ -492,9 +490,9 @@ def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
 # Noisy noise eval on real world datasets
 ############################################################################
 
-def filter_useless_nodes(seed,
+
+def filter_useless_nodes(args_dataset,
                          args_model,
-                         args_dataset,
                          args_explainers,
                          args_hops,
                          args_num_samples,
@@ -512,7 +510,8 @@ def filter_useless_nodes(seed,
                          args_regu,
                          args_gpu,
                          args_fullempty,
-                         args_S):
+                         args_S,
+                         seed):
     """ Add noisy neighbours to dataset and check how many are included in explanations
     The fewest, the better the explainer.
 
@@ -522,7 +521,7 @@ def filter_useless_nodes(seed,
     """
 
     # Define dataset
-    data = prepare_data(args_dataset, seed)
+    data = prepare_data(args_dataset, seed=seed)
 
     # Select a random subset of nodes to eval the explainer on.
     if not node_indices:
@@ -760,8 +759,7 @@ def study_attention_weights(data, model, args_test_samples):
 
 ############################################################################
 
-def eval_shap(seed,
-              args_dataset,
+def eval_shap(args_dataset,
               args_model,
               args_test_samples,
               args_hops,
@@ -777,7 +775,8 @@ def eval_shap(seed,
               args_regu,
               args_gpu,
               args_fullempty,
-              args_S):
+              args_S, 
+              seed):
     """
     Compares SHAP and GraphSVX on graph based datasets
     Check if they agree on features'contribution towards prediction for several test samples

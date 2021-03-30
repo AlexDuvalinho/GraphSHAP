@@ -11,7 +11,6 @@ import numpy as np
 import os as os
 import random
 from types import SimpleNamespace
-import warnings
 
 import configs
 import utils.featgen as featgen
@@ -20,10 +19,9 @@ import src.gengraph as gengraph
 import pickle as pkl
 from utils.graph_utils import get_graph_data
 
-warnings.filterwarnings('ignore')
 
 
-def prepare_data(dataset, seed):
+def prepare_data(dataset, train_ratio=0.8, input_dim=None, seed=10):
     """Import, save and process dataset
 
     Args:
@@ -57,13 +55,13 @@ def prepare_data(dataset, seed):
     
     elif dataset in ['syn1', 'syn2', 'syn4', 'syn5']: 
         data = synthetic_data(
-            dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
+            dataset, dirname, train_ratio, input_dim)
     
     elif dataset == 'syn6':
-        data = gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8)
+        data = gc_data(dataset, dirname, train_ratio)
 
     elif dataset == 'Mutagenicity':
-        data = gc_data(dataset, dirname, args_input_dim=14, args_train_ratio=0.8)
+        data = gc_data(dataset, dirname, train_ratio)
 
     return data
 
@@ -235,7 +233,7 @@ def extract_test_nodes(data, num_samples, seed):
     return node_indices
 
 
-def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
+def synthetic_data(dataset, dirname, train_ratio=0.8, input_dim=10):
     """
     Create synthetic data, similarly to what was done in GNNExplainer
     Pipeline was adapted so as to fit ours. 
@@ -251,18 +249,16 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
         # Construct graph
         if dataset == 'syn1':
             G, labels, name = gengraph.gen_syn1(
-                feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim)))
+                feature_generator=featgen.ConstFeatureGen(np.ones(input_dim)))
         elif dataset == 'syn4':
             G, labels, name = gengraph.gen_syn4(
-                feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)))
+                feature_generator=featgen.ConstFeatureGen(np.ones(input_dim, dtype=float)))
         elif dataset == 'syn5':
             G, labels, name = gengraph.gen_syn5(
-                feature_generator=featgen.ConstFeatureGen(np.ones(args_input_dim, dtype=float)))
+                feature_generator=featgen.ConstFeatureGen(np.ones(input_dim, dtype=float)))
         elif dataset == 'syn2':
             G, labels, name = gengraph.gen_syn2()
-            args_input_dim = len(G.nodes[0]["feat"])
-        # elif dataset == 'syn6':
-        # 	G, labels, name = gengraph.gen_syn6()
+            input_dim = len(G.nodes[0]["feat"])
 
         # Create dataset
         data = SimpleNamespace()
@@ -270,13 +266,13 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
             G, labels)
         data.x = data.x.type(torch.FloatTensor)
         data.num_classes = max(labels) + 1
-        data.num_features = args_input_dim
+        data.num_features = input_dim
         data.num_nodes = G.number_of_nodes()
         data.name = dataset
 
         # Train/test split only for nodes
         data.train_mask, data.val_mask, data.test_mask = split_function(
-            data.y.numpy(), args_train_ratio)
+            data.y.numpy(), train_ratio)
 
         # Save data
         torch.save(data, data_path)
@@ -284,7 +280,7 @@ def synthetic_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
     return data
 
 
-def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
+def gc_data(dataset, dirname, train_ratio=0.8):
     """Process datasets made of multiple graphs 
 
     Args:
@@ -335,7 +331,7 @@ def gc_data(dataset, dirname, args_input_dim=10, args_train_ratio=0.8):
         
         # Train / Val / Test split
         data.train_mask, data.val_mask, data.test_mask = split_function(
-                        data.y, args_train_ratio)
+                        data.y, train_ratio)
         # Save data
         torch.save(data, data_path)
     return data 
