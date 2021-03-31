@@ -13,11 +13,8 @@ ipython_config.py
 # Files to 
 .vscode/
 data/Amazon/
-data/CiteSeer/
 data/Cora/
-data/PPI/
 data/PubMed/
-data/Reedit/
 results/
 data/Mutagenicity.pkl
 data/Mutagenicity.pth
