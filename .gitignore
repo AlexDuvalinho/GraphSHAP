@@ -19,7 +19,6 @@ data/PPI/
 data/PubMed/
 data/Reedit/
 results/
-data/syn1.pth
-data/syn2.pth
-data/syn4.pth
-data/syn5.pth
+data/Mutagenicity.pkl
+data/Mutagenicity.pth
+data/Mutagenicity/
