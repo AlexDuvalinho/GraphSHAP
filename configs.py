@@ -98,7 +98,7 @@ def arg_parse():
 
     # args_hv: compute_pred', 'basic_default', 'neutral', 'graph_classification', 'compute_pred_subgraph'
     # args_feat: 'All', 'Expectation', 'Null'
-    # args_coal: 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
+    # args_coal: 'NewSmarterSeparate', 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
     parser.set_defaults(dataset='syn4',
@@ -110,7 +110,7 @@ def arg_parse():
                         hops=2,
                         hv='compute_pred',
                         feat='Expectation',
-                        coal='SmarterSeparate',
+                        coal='NewSmarterSeparate',
                         g='WLR_sklearn',
                         multiclass=False,
                         regu=None,

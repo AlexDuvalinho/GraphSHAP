@@ -129,6 +129,10 @@ class GraphSVX():
             # --- Feature selection ---
             if args_hv == 'compute_pred_subgraph':
                 feat_idx, discarded_feat_idx = self.feature_selection_subgraph(node_index, args_feat)
+                # Also solve incompatibility
+                if args_hv == 'SmarterSeparate':
+                    print('Incompatibility: user Smarter sampling instead')
+                    args_hv = 'Smarter' 
             else: 
                 feat_idx, discarded_feat_idx = self.feature_selection(node_index, args_feat)
 
@@ -382,7 +386,7 @@ class GraphSVX():
                 [tensor] (num_samples, M): dataset of samples/coalitions z' 
                 [tensor] (num_samples): vector of kernel weights corresponding to samples 
             """
-            if args_coal == 'SmarterSeparate':
+            if args_coal == 'SmarterSeparate' or args_coal == 'NewSmarterSeparate':
                 weights = torch.zeros(num_samples, dtype=torch.float64)
                 if self.F==0 or D==0:
                     num = int(num_samples * self.F/self.M)
@@ -425,10 +429,104 @@ class GraphSVX():
                 
             return z_, weights
 
-    def SmarterSeparate(self, num_samples, args_K, regu):
+    def NewSmarterSeparate(self, num_samples, args_K, regu):
         """Default mask sampler
         Generates feature mask and node mask independently
         Favours masks with a high weight + smart space allocation algorithm
+
+        Args:
+            num_samples (int): number of masks desired 
+            args_K (int): maximum size of masks favoured
+            regu (binary): nodes or features 
+
+        Returns:
+            tensor: dataset of samples
+        """
+        if regu == None:
+            z_ = self.Smarter(num_samples, args_K, regu)
+            return z_
+
+        # Favour features - special coalitions don't study node's effect
+        elif regu > 0.5:
+            M = self.F
+            z_ = torch.ones(num_samples, M)
+            z_[1::2] = torch.zeros(num_samples//2, M) # case k = 0 
+            i = 2
+            k = 1
+            P = num_samples * 9/10
+            while i < P and k <= min(args_K, M-1): 
+
+                # All coalitions of order k can be sampled 
+                if i + 2 * np.binom(k, M) < P:
+                    L = list(combinations(range(M), k))
+                    for c in L:
+                        z_[i,c] = torch.zeros(k)
+                        z[i+1,c] = torch.ones(k)
+                        i += 2
+            
+                # All coalitions of order k cannot be sampled
+                else: 
+                    weight = torch.ones(P)
+                    L = list(combinations(range(M), k))
+                    while i < P:
+                        cw = [sum(weight[c]) for c in L]
+                        indexes_cw = torch.argmax(cw)
+                        n = random.randint(0,len(list(indexes_cw)))
+                        c = L[n]
+                        p = random.randint(0,1)
+                        v = torch.tensor(p).repeat(M)
+                        z[i,:] =  torch.tensor(1-p).repeat(M)
+                        weight[c] = torch.tensor(1/ (1 + [1/el.item() for el in weight]))
+                        i += 1
+                    k += 1
+            
+            # Random coal
+            z_[i:, :] = torch.empty( max(0, num_samples-i), M).random_(2)
+            return z_
+
+       # Favour features - special coalitions don't study node's effect
+        elif regu < 0.5:
+            M = self.M - self.F
+            z_ = torch.ones(num_samples, M)
+            z_[1::2] = torch.zeros(num_samples//2, M) # case k = 0 
+            i = 2
+            k = 1
+            P = int(num_samples * 9/10)
+            while i < P and k <= min(args_K, M-1): 
+
+                # All coalitions of order k can be sampled 
+                if i + 2 * scipy.special.comb(M,k) <= P:
+                    L = list(combinations(range(M), k))
+                    for c in L:
+                        z_[i,c] = torch.zeros(k)
+                        z_[i+1,c] = torch.ones(k)
+                        i += 2
+                    k += 1
+            
+                # All coalitions of order k cannot be sampled
+                else: 
+                    weight = torch.ones(M)
+                    L = list(combinations(range(M), k))
+                    random.shuffle(L)
+                    while i < min(P, len(L)):
+                        cw = torch.tensor([sum(weight[list(c)]) for c in L])
+                        c_idx = torch.argmax(cw).item()
+                        c = list(L[c_idx])
+                        p = float(random.randint(0,1))
+                        z_[i,:] = torch.tensor(p).repeat(M)
+                        z_[i,c] =  torch.tensor(1-p).repeat(len(c))
+                        weight[list(c)] = torch.tensor([1/(1+1/el.item()) for el in weight[list(c)]])
+                        i += 1
+                    k += 1
+            
+            # Random coal
+            z_[i:, :] = torch.empty( max(0, num_samples-i), M).random_(2)
+            return z_
+
+    def SmarterSeparate(self, num_samples, args_K, regu):
+        """Default mask sampler
+        Generates feature mask and node mask independently
+        Favours masks with a high weight + efficient space allocation algorithm
 
         Args:
             num_samples (int): number of masks desired 
@@ -455,12 +553,12 @@ class GraphSVX():
             while i < num_samples:
                 # Look at each feat/nei individually if have enough sample
                 # Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
-                if i + 2 * self.F < num_samples and k == 1:
-                    z_[i:i+self.F, :] = torch.ones(self.F, M)
-                    z_[i:i+self.F, :].fill_diagonal_(0)
-                    z_[i+self.F:i+2*self.F, :] = torch.zeros(self.F, M)
-                    z_[i+self.F:i+2*self.F, :].fill_diagonal_(1)
-                    i += 2 * self.F
+                if i + 2 * M < num_samples and k == 1:
+                    z_[i:i+M, :] = torch.ones(M, M)
+                    z_[i:i+M, :].fill_diagonal_(0)
+                    z_[i+M:i+2*M, :] = torch.zeros(M, M)
+                    z_[i+M:i+2*M, :].fill_diagonal_(1)
+                    i += 2 * M
                     k += 1
 
                 else:
@@ -468,9 +566,9 @@ class GraphSVX():
                     # Half for specific coalitions with low k and rest random samples
                     samp = i + 9*(num_samples - i)//10
                     #samp = num_samples
-                    while i < samp and k <= min(args_K, self.F):
+                    while i < samp and k <= min(args_K, M):
                         # Sample coalitions of k1 neighbours or k1 features without repet and order.
-                        L = list(combinations(range(self.F), k))
+                        L = list(combinations(range(M), k))
                         random.shuffle(L)
                         L = L[:samp+1]
 
@@ -497,8 +595,7 @@ class GraphSVX():
         # Favour neighbour
         else:
             # Define empty and full coalitions
-            D = len(self.neighbours)
-            M = D
+            M = len(self.neighbours)
             # self.F = 0
             z_ = torch.ones(num_samples, M)
             z_[1::2] = torch.zeros(num_samples//2, M)
@@ -508,12 +605,12 @@ class GraphSVX():
             while i < num_samples:
                 # Look at each feat/nei individually if have enough sample
                 # Coalitions of the form (All nodes/feat, All-1 feat/nodes) & (No nodes/feat, 1 feat/nodes)
-                if i + 2 * D < num_samples and k == 1:
-                    z_[i:i+D, :] = torch.ones(D, M)
-                    z_[i:i+D, :].fill_diagonal_(0)
-                    z_[i+D:i+2*D, :] = torch.zeros(D, M)
-                    z_[i+D:i+2*D, :].fill_diagonal_(1)
-                    i += 2 * D
+                if i + 2 * M < num_samples and k == 1:
+                    z_[i:i+M, :] = torch.ones(M, M)
+                    z_[i:i+M, :].fill_diagonal_(0)
+                    z_[i+M:i+2*M, :] = torch.zeros(M, M)
+                    z_[i+M:i+2*M, :].fill_diagonal_(1)
+                    i += 2 * M
                     k += 1
 
                 else:
@@ -521,7 +618,7 @@ class GraphSVX():
                     # Half for specific coalitions with low k and rest random samples
                     #samp = i + 9*(num_samples - i)//10
                     samp = num_samples
-                    while i < samp and k <= min(args_K, D):
+                    while i < samp and k <= min(args_K, M):
                         # Sample coalitions of k1 neighbours or k1 features without repet and order.
                         L = list(combinations(range(0, M), k))
                         random.shuffle(L)

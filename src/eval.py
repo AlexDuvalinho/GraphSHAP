@@ -43,17 +43,17 @@ def eval_syn(data, model, args):
     k = 4  # number of nodes for the shape introduced (house, cycle)
     K = 0
     if args.dataset == 'syn1':
-        node_indices = list(range(400, 450, 5))
+        node_indices = list(range(400, 500, 5))
     elif args.dataset == 'syn2':
         node_indices = list(range(400, 425, 5)) + list(range(1100, 1125, 5))
     elif args.dataset == 'syn4':
-        node_indices = list(range(511, 571, 6))
+        node_indices = list(range(511, 691, 6))  # (511, 571, 6)
         if args.hops == 3:
             k = 5
         else:
             K = 5
     elif args.dataset == 'syn5':
-        node_indices = list(range(511, 601, 9))
+        node_indices = list(range(511, 681, 9))  # (511, 601, 9)
         if args.hops == 3:
             k = 8
         else:
