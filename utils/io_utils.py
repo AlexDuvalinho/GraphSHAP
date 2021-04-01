@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 
 import networkx as nx
 import tensorboardX
-import cv2
 
 import torch
 import torch.nn as nn
@@ -159,7 +158,7 @@ def save(mask_cg):
 	mask = (mask - np.min(mask)) / np.max(mask)
 	mask = 1 - mask
 
-	cv2.imwrite("mask.png", np.uint8(255 * mask))
+	torch.save("mask.png", np.uint8(255 * mask))
 
 
 def log_matrix(writer, mat, name, epoch, fig_size=(8, 6), dpi=200):
