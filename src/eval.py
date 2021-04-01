@@ -53,9 +53,9 @@ def eval_syn(data, model, args):
         else:
             K = 5
     elif args.dataset == 'syn5':
-        node_indices = list(range(511, 681, 9))  # (511, 601, 9)
+        node_indices = list(range(511, 654, 9))  # (511, 601, 9)
         if args.hops == 3:
-            k = 8
+            k = 7
         else:
             k = 5
             K = 8
