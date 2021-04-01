@@ -18,3 +18,4 @@ data/PubMed/
 data/Mutagenicity.pkl
 data/Mutagenicity.pth
 data/Mutagenicity/
+results/

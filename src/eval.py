@@ -446,7 +446,7 @@ def filter_useless_features(args_dataset,
     # Store graph - with key params and time
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
-    plt.savefig('results/eval1_feat_{}_{}_{}_{}_{}.png'.format(data.name,
+    plt.savefig('results/eval1_feat_{}_{}_{}_{}_{}.pdf'.format(data.name,
                                                            args_coal, 
                                                            args_feat, 
                                                            args_hv, 
@@ -682,7 +682,7 @@ def filter_useless_nodes(args_dataset,
     # Store graph - with key params and time
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
-    plt.savefig('results/eval1_node_{}_{}_{}_{}_{}.png'.format(data.name,
+    plt.savefig('results/eval1_node_{}_{}_{}_{}_{}.pdf'.format(data.name,
                                                            args_coal, 
                                                            args_feat, 
                                                            args_hv, 
