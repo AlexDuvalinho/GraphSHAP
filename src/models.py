@@ -488,7 +488,7 @@ class GcnEncoderNode(GcnEncoderGraph):
     def forward(self, x, adj, batch_num_nodes=None, **kwargs):
         # mask
         # Convert ajd matrix
-        adj = to_dense_adj(adj)
+        adj = to_dense_adj(adj, max_num_nodes=x.shape[0])
 
         max_num_nodes = adj.size()[1]
         if batch_num_nodes is not None:
