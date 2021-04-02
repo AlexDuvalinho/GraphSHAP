@@ -87,7 +87,7 @@ def arg_parse():
                         help="surrogate model used to train g on derived dataset")
     parser.add_argument("--multiclass", type=bool,
                         help='False if we consider explanations for the predicted class only')
-    parser.add_argument("--regu", type=int,
+    parser.add_argument("--regu", type=float,
                         help='None if we do not apply regularisation, 1 if only feat')
     parser.add_argument("--info", type=bool,
                         help='True if want to print info')
@@ -101,16 +101,16 @@ def arg_parse():
     # args_coal: 'NewSmarterSeparate', 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
-    parser.set_defaults(dataset='syn4',
+    parser.set_defaults(dataset='syn5',
                         model='GCN',
                         indexes=[500, 10],
-                        num_samples=300,
+                        num_samples=400,
                         fullempty=None,
                         S=4,
                         hops=2,
                         hv='compute_pred',
                         feat='Expectation',
-                        coal='NewSmarterSeparate',
+                        coal='SmarterSeparate',
                         g='WLR_sklearn',
                         multiclass=False,
                         regu=None,
@@ -122,7 +122,7 @@ def arg_parse():
                         feat_explainers=['GraphSVX', 'GNNExplainer', 
                                             'GraphLIME', 'LIME', 'SHAP'],
                         node_explainers=['GraphSVX', 'GNNExplainer', 'Greedy'],
-                        test_samples=10,
+                        test_samples=5,
                         K=0.10,
                         prop_noise_feat=0.20,
                         prop_noise_nodes=0.20,
