@@ -393,7 +393,7 @@ class GraphSVX():
                 elif regu != None:
                     num = int( num_samples * ( self.F/self.M + ((regu - 0.5)/0.5)  * (self.F/self.M) ) )    
                 else: 
-                    num = int(0.25* num_samples/2 + 0.5 * num_samples * self.F/self.M)
+                    num = int(0.25* num_samples/2 + 0.75 * num_samples * self.F/self.M)
                 # Features only
                 z_bis = eval('self.' + args_coal)(num, args_K, 1)  
                 z_bis = z_bis[torch.randperm(z_bis.size()[0])]
