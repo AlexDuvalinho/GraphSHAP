@@ -120,27 +120,6 @@ def main():
                                            args.fullempty,
                                            args.S,
                                            args.seed)
-    """
-    if args.evalshap:
-        eval_shap(args.dataset,
-                    args.model,
-                    args.test_samples,
-                    args.hops,
-                    args.K,
-                    args.num_samples,
-                    node_indices,
-                    args.info,
-                    args.hv,
-                    args.feat,
-                    args.coal,
-                    args.g,
-                    args.multiclass,
-                    args.regu,
-                    args.gpu,
-                    args.fullempty,
-                    args.S,
-                    args.seed)
-    """
 
     end_time = time.time()
     print('Time: ', end_time - start_time)
