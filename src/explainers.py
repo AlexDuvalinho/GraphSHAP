@@ -73,11 +73,11 @@ class GraphSVX():
             multiclass (bool, optional): extension - consider predicted class only or all classes
             fullempty (bool, optional): enforce high weight for full and empty coalitions
             S (int, optional): maximum size of coalitions that are favoured in mask generation phase 
-            args_hv (str, optional): strategy used to convert simplified input z' to original
-                                                    input space z
+            args_hv (str, optional): strategy used to convert simplified input z to original
+                                                    input space z'
             args_feat (str, optional): way to switch off and discard node features (0 or expectation)
-            args_coal (str, optional): how we sample coalitions z'
-            args_g (str, optional): method used to train model g on (z', f(z))
+            args_coal (str, optional): how we sample coalitions z
+            args_g (str, optional): method used to train model g on (z, f(z'))
             regu (int, optional): extension - apply regularisation to balance importance granted
                                                     to nodes vs features
             vizu (bool, optional): creates vizualisation or not
@@ -150,9 +150,9 @@ class GraphSVX():
             if fullempty:
                 weights[weights == 1000] = 0
 
-            # --- GRAPH GENERATOR --- 
-            # Create dataset (z', f(GEN(z'))), stored as (z_, fz)
-            # Retrieve z from z' and x_v, then compute f(z)
+            # --- GRAPH GENERATOR ---
+            # Create dataset (z, f(GEN(z'))), stored as (z_, fz)
+            # Retrieve z' from z and x_v, then compute f(z')
             fz = eval('self.' + args_hv)(node_index, num_samples, D, z_,
                                         feat_idx, one_hop_neighbours, args_K, args_feat,
                                         discarded_feat_idx, multiclass, true_pred)
@@ -217,11 +217,11 @@ class GraphSVX():
             multiclass (bool, optional): extension - consider predicted class only or all classes
             fullempty (bool, optional): enforce high weight for full and empty coalitions
             S (int, optional): maximum size of coalitions that are favoured in mask generation phase 
-            args_hv (str, optional): strategy used to convert simplified input z' to original
-                                                    input space z
+            args_hv (str, optional): strategy used to convert simplified input z to original
+                                                    input space z'
             args_feat (str, optional): way to switch off and discard node features (0 or expectation)
-            args_coal (str, optional): how we sample coalitions z'
-            args_g (str, optional): method used to train model g on (z', f(z))
+            args_coal (str, optional): how we sample coalitions z
+            args_g (str, optional): method used to train model g on (z, f(z'))
             regu (int, optional): extension - apply regularisation to balance importance granted
                                                     to nodes vs features
             vizu (bool, optional): creates vizualisation or not
@@ -271,8 +271,8 @@ class GraphSVX():
                 weights[(weights == 1000).nonzero()] = 0
 
             # --- GRAPH GENERATOR ---
-            # Create dataset (z', f(GEN(z'))), stored as (z_, fz)
-            # Retrieve z from z' and x_v, then compute f(z)
+            # Create dataset (z, f(GEN(z'))), stored as (z_, fz)
+            # Retrieve z' from z and x_v, then compute f(z')
             fz = self.graph_classification(
                 graph_index, num_samples, D, z_, args_K, args_feat, true_pred)
 
@@ -421,7 +421,7 @@ class GraphSVX():
                 # Shuffle them 
                 z_ = z_[torch.randperm(z_.size()[0])]
 
-                # Compute |z'| for each sample z': number of non-zero entries
+                # Compute |z| for each sample z: number of non-zero entries
                 s = (z_ != 0).sum(dim=1)
 
                 # GraphSVX Kernel: define weights associated with each sample 
@@ -806,7 +806,7 @@ class GraphSVX():
         """ Computes a weight for each newly created sample 
 
         Args:
-            s (tensor): contains dimension of z' for all instances
+            s (tensor): contains dimension of z for all instances
                 (number of features + neighbours included)
             M (tensor): total number of features/nodes in dataset
 
@@ -832,19 +832,19 @@ class GraphSVX():
         return torch.tensor(shapley_kernel)
 
     ################################
-    # Graph generator + compute f(z)
+    # Graph generator + compute f(z')
     ################################
 
     def compute_pred_subgraph(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+        """ Construct z' from z and compute prediction f(z') for each sample z
+            In fact, we build the dataset (z, f(z')), required to train the weighted linear model.
             Features in subgraph
 
         Args: 
                 Variables are defined exactly as defined in explainer function 
 
         Returns: 
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
+                (tensor): f(z') - probability of belonging to each target classes, for all samples z'
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
         # Create networkx graph
@@ -864,7 +864,7 @@ class GraphSVX():
         excluded_feat = {}
         excluded_nei = {}
 
-        # Define excluded_feat and excluded_nei for each z'
+        # Define excluded_feat and excluded_nei for each z
         for i in range(num_samples):
 
             # Store index of features that are not sampled (z_j=0)
@@ -882,7 +882,7 @@ class GraphSVX():
             # Dico with key = num_sample id, value = excluded neighbour index
             excluded_nei[i] = nodes_id
 
-        # Init label f(z) for graphshap dataset - consider all classes
+        # Init label f(z') for graphshap dataset - consider all classes
         if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
@@ -890,7 +890,7 @@ class GraphSVX():
         # classes_labels = torch.zeros(num_samples)
         # pred_confidence = torch.zeros(num_samples)
 
-        # Create new matrix A and X - for each sample ≈ reform z from z'
+        # Create new matrix A and X - for each sample ≈ reform z from z
         for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
             # For each excluded neighbour, retrieve the column index of its occurences
@@ -965,15 +965,15 @@ class GraphSVX():
         return fz
 
     def compute_pred(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+        """ Construct z' from z and compute prediction f(z') for each sample z
+            In fact, we build the dataset (z, f(z')), required to train the weighted linear model.
             Standard method
 
         Args: 
                 Variables are defined exactly as defined in explainer function 
 
         Returns: 
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
+                (tensor): f(z') - probability of belonging to each target classes, for all samples z'
                 Dimension (N * C) where N is num_samples and C num_classses. 
         """
         # Create a networkx graph 
@@ -989,7 +989,7 @@ class GraphSVX():
             # av_feat_values = self.data.x[402]
             # or random feature vector made of random value across each col of X
 
-        # Store discarded nodes/features (z'_j=0) for each sample z' 
+        # Store discarded nodes/features (z_j=0) for each sample z 
         excluded_feat = {}
         excluded_nei = {}
         for i in range(num_samples):
@@ -1009,14 +1009,14 @@ class GraphSVX():
             excluded_nei[i] = nodes_id
             # Dico with key = num_sample id, value = excluded neighbour index
 
-        # Init label f(z) for graphshap dataset
+        # Init label f(z') for graphshap dataset
         if multiclass:
             # Allows to explain why one class was not chosen 
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
             fz = torch.zeros(num_samples)
 
-        # Construct new matrices A and X for each sample - reform z from z'
+        # Construct new matrices A and X for each sample - reform z' from z
         for (key, ex_nei), (_, ex_feat) in tqdm(zip(excluded_nei.items(), excluded_feat.items())):
 
             # Isolate in the graph each node excluded from the sampled coalition
@@ -1075,8 +1075,8 @@ class GraphSVX():
         return fz
 
     def graph_classification(self, graph_index, num_samples, D, z_, args_K, args_feat, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+        """ Construct z' from z and compute prediction f(z') for each sample z
+            In fact, we build the dataset (z, f(z')), required to train the weighted linear model.
             Graph Classification task
 
         Args:
@@ -1084,10 +1084,10 @@ class GraphSVX():
             Note that adjacency matrices are dense (square) matrices (unlike node classification)
 
         Returns:
-            (tensor): f(z) - probability of belonging to each target classes, for all samples z
+            (tensor): f(z') - probability of belonging to each target classes, for all samples z'
             Dimension (N * C) where N is num_samples and C num_classses.
         """
-        # Store discarded nodes (z'_j=0) for each sample z' 
+        # Store discarded nodes (z_j=0) for each sample z 
         excluded_nei = {}
         for i in range(num_samples):
             # Excluded nodes' indexes 
@@ -1107,7 +1107,7 @@ class GraphSVX():
             av_feat_values = self.data.x.mean(dim=0).mean(dim=0)
             #av_feat_values = np.mean(self.data.x[graph_index],axis=0)
         
-        # Create new matrix A and X - for each sample ≈ reform z from z'
+        # Create new matrix A and X - for each sample ≈ reform z' from z
         for (key, ex_nei) in tqdm(excluded_nei.items()):
 
             # Change adj matrix
@@ -1134,15 +1134,15 @@ class GraphSVX():
         return fz
 
     def basic_default(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+        """ Construct z' from z and compute prediction f(z') for each sample z
+            In fact, we build the dataset (z, f(z')), required to train the weighted linear model.
             Does not deal with isolated 2 hops neighbours (or more)
 
         Args:
                 Variables are defined exactly as defined in explainer function
 
         Returns:
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
+                (tensor): f(z') - probability of belonging to each target classes, for all samples z'
                 Dimension (N * C) where N is num_samples and C num_classses.
         """
         # Define an "average" feature vector - for discarded features
@@ -1151,7 +1151,7 @@ class GraphSVX():
         else:
             av_feat_values = self.data.x.mean(dim=0)
 
-        # Define excluded_feat and excluded_nei for each z'
+        # Define excluded_feat and excluded_nei for each z
         excluded_feat = {}
         excluded_nei = {}
         for i in range(num_samples):
@@ -1171,7 +1171,7 @@ class GraphSVX():
             excluded_nei[i] = nodes_id
             # Dico with key = num_sample id, value = excluded neighbour index
 
-        # Init label f(z) for graphshap dataset - consider all classes
+        # Init label f(z') for graphshap dataset - consider all classes
         if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
@@ -1222,8 +1222,8 @@ class GraphSVX():
         return fz
 
     def neutral(self, node_index, num_samples, D, z_, feat_idx, one_hop_neighbours, args_K, args_feat, discarded_feat_idx, multiclass, true_pred):
-        """ Construct z from z' and compute prediction f(z) for each sample z'
-            In fact, we build the dataset (z', f(z)), required to train the weighted linear model.
+        """ Construct z' from z and compute prediction f(z') for each sample z
+            In fact, we build the dataset (z, f(z')), required to train the weighted linear model.
             Do not isolate nodes but set their feature vector to expected values
             Consider node features for node itself
 
@@ -1231,7 +1231,7 @@ class GraphSVX():
                 Variables are defined exactly as defined in explainer function
 
         Returns:
-                (tensor): f(z) - probability of belonging to each target classes, for all samples z
+                (tensor): f(z') - probability of belonging to each target classes, for all samples z
                 Dimension (N * C) where N is num_samples and C num_classses.
         """
         # Initialise new node feature vectors and neighbours to disregard
@@ -1264,13 +1264,13 @@ class GraphSVX():
             # Dico with key = num_sample id, value = excluded neighbour index
             excluded_nei[i] = nodes_id
 
-        # Init label f(z) for graphshap dataset - consider all classes
+        # Init label f(z') for graphshap dataset - consider all classes
         if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
             fz = torch.zeros(num_samples)
 
-        # Create new matrix A and X - for each sample ≈ reform z from z'
+        # Create new matrix A and X - for each sample ≈ reform z' from z
         for (key, ex_nei), (_, ex_feat) in zip(excluded_nei.items(), excluded_feat.items()):
 
             # Change feature vector for node of interest
@@ -1315,11 +1315,11 @@ class GraphSVX():
 
         Args:
             z_ (tensor): binary vector representing the new instance
-            weights ([type]): shapley kernel weights for z'
-            fz ([type]): prediction f(z) where z is a new instance - formed from z' and x
+            weights ([type]): shapley kernel weights for z
+            fz ([type]): prediction f(z') where z' is a new instance - formed from z and x
 
         Returns:
-            [tensor]: estimated coefficients of our weighted linear regression - on (z', f(z))
+            [tensor]: estimated coefficients of our weighted linear regression - on (z, f(z'))
             Dimension (M * num_classes)
         """
         # Add constant term
@@ -2114,23 +2114,23 @@ class SHAP():
                 true_conf, true_pred = self.model(
                     x=self.data.x, edge_index=self.data.edge_index).exp()[node_index][0].max(dim=0)
 
-        # Determine z' => features whose importance is investigated
+        # Determine z => features whose importance is investigated
         # Decrease number of samples because nodes are not considered
         num_samples = int(0.75 * num_samples)
 
         # Consider all features (+ use expectation like below)
         feat_idx = torch.unsqueeze(torch.arange(self.data.num_nodes), 1)
 
-        # Sample z' - binary vector of dimension (num_samples, M)
+        # Sample z - binary vector of dimension (num_samples, M)
         z_ = torch.empty(num_samples, self.M).random_(2)
-        # Compute |z'| for each sample z'
+        # Compute |z| for each sample z
         s = (z_ != 0).sum(dim=1)
 
         # Define weights associated with each sample using shapley kernel formula
         weights = self.shapley_kernel(s)
 
-        # Create dataset (z', f(z)), stored as (z_, fz)
-        # Retrive z from z' and x_v, then compute f(z)
+        # Create dataset (z, f(z')), stored as (z_, fz)
+        # Retrive z' from z and x_v, then compute f(z')
         fz = self.compute_pred(node_index, num_samples,
                                self.F, z_, feat_idx, multiclass, true_pred)
 
@@ -2162,11 +2162,11 @@ class SHAP():
     def compute_pred(self, node_index, num_samples, F, z_, feat_idx, multiclass, true_pred):
         """
         Variables are exactly as defined in explainer function, where compute_pred is used
-        This function aims to construct z (from z' and x_v) and then to compute f(z), 
+        This function aims to construct z' (from z and x_v) and then to compute f(z'), 
         meaning the prediction of the new instances with our original model. 
-        In fact, it builds the dataset (z', f(z)), required to train the weighted linear model.
+        In fact, it builds the dataset (z, f(z')), required to train the weighted linear model.
 
-        :return fz: probability of belonging to each target classes, for all samples z
+        :return fz: probability of belonging to each target classes, for all samples z'
         fz is of dimension N*C where N is num_samples and C num_classses. 
         """
         # This implies retrieving z from z' - wrt sampled neighbours and node features
@@ -2174,7 +2174,7 @@ class SHAP():
         # isolate
         X_v = torch.zeros([num_samples, self.data.num_features])
 
-        # Init label f(z) for graphshap dataset - consider all classes
+        # Init label f(z') for graphshap dataset - consider all classes
         if multiclass:
             fz = torch.zeros((num_samples, self.data.num_classes))
         else:
@@ -2211,10 +2211,10 @@ class SHAP():
 
     def OLS(self, z_, weights, fz):
         """
-        :param z_: z' - binary vector  
-        :param weights: shapley kernel weights for z'
-        :param fz: f(z) where z is a new instance - formed from z' and x
-        :return: estimated coefficients of our weighted linear regression - on (z', f(z))
+        :param z_: z - binary vector  
+        :param weights: shapley kernel weights for z
+        :param fz: f(z') where z is a new instance - formed from z and x
+        :return: estimated coefficients of our weighted linear regression - on (z, f(z'))
         phi is of dimension (M * num_classes)
         """
         # Add constant term
