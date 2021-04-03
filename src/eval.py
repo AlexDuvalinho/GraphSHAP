@@ -106,7 +106,8 @@ def eval_syn(data, model, args):
             # Sort of accruacy metric
             accuracy.append(i / k)
 
-            print('There are {} from targeted shape among most imp. nodes'.format(i))
+            if args.info: 
+                print('There are {} from targeted shape among most imp. nodes'.format(i))
 
         # Look at importance distribution among features
         # Identify most important features and check if it corresponds to truly imp ones
