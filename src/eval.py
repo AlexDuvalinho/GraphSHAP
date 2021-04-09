@@ -54,11 +54,9 @@ def eval_syn(data, model, args):
             K = 5
     elif args.dataset == 'syn5':
         node_indices = list(range(511, 654, 9))  # (511, 601, 9)
-        if args.hops == 3:
-            k = 7
-        else:
-            k = 5
-            K = 8
+        #k = 7
+        k = 5
+        K = 7
 
     # GraphSHAP - assess accuracy of explanations
     graphsvx = GraphSVX(data, model, args.gpu)
@@ -637,7 +635,15 @@ def filter_useless_nodes(args_dataset,
 
             # Number of noisy features that appear in explanations - use index to spot them
             num_noise_nei = sum(
-                idx >= (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
+                idx > (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
+
+            # If node importance of top K neighbours is unsignificant, discard 
+            # Possible as we have importance informative measure, unlike others.
+            if explainer_name == 'GraphSVX':
+                explainable_part = true_confs[c] - \
+                                explainer.base_values[c]
+                num_noise_nei = len([imp for imp in sorted(
+                    nei_indices)[-num_noise_nei:] if np.abs(coefs[imp]) > 0.05*explainable_part])
 
             pred_class_num_noise_neis.append(num_noise_nei)
 

@@ -2009,7 +2009,7 @@ class LIME:
         return probas
 
     def explain(self, node_index, hops, num_samples, info=False, multiclass=False, **kwargs):
-        num_samples = num_samples//3
+        num_samples = num_samples//2
         x = self.data.x
         edge_index = self.data.edge_index
 
@@ -2116,7 +2116,7 @@ class SHAP():
 
         # Determine z => features whose importance is investigated
         # Decrease number of samples because nodes are not considered
-        num_samples = int(0.75 * num_samples)
+        num_samples = num_samples//2
 
         # Consider all features (+ use expectation like below)
         feat_idx = torch.unsqueeze(torch.arange(self.data.num_nodes), 1)
@@ -2258,12 +2258,12 @@ class GNNExplainer():
         self.model.eval()
 
     def explain(self, node_index, hops, num_samples, info=False, multiclass=False, *unused):
-        num_samples = num_samples//3
+        num_samples = num_samples//2
         # Use GNNE open source implem - outputs features's and edges importance
         if self.gpu:
             device = torch.device('cpu')
             self.model = self.model.to(device)
-        explainer = GNNE(self.model, epochs=num_samples)
+        explainer = GNNE(self.model, epochs=150)
         try:
             node_feat_mask, self.edge_mask = explainer.explain_node(
                 node_index, self.data.x, self.data.edge_index)
