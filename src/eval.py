@@ -309,6 +309,9 @@ def filter_useless_features(args_dataset,
     #for node_idx in node_indices:
     #	K.append(int(data.x[node_idx].nonzero().shape[0] * args_K))
 
+    if args_regu == 0:
+        args_regu = 1
+
     # Loop on the different explainers selected
     for c, explainer_name in enumerate(args_explainers):
         
@@ -394,14 +397,20 @@ def filter_useless_features(args_dataset,
             F.append(explainer.F)
 
             # Store indexes of K most important node features, for each class
-            feat_indices = np.abs(
-                coefs).argsort()[-K[j]:].tolist()
+            feat_indices = coefs.argsort()[-K[j]:].tolist()
 
-            # Number of noisy features that appear in explanations - use position to spot them
-            num_noise_feat = sum(
-                idx < num_noise_feat_considered for idx in feat_indices)
+            # Number of noisy features that appear in explanations - use index to spot them
+            num_noise_feat = [idx for idx in feat_indices if idx > (explainer.neighbours.shape[0] - num_noise_feat_considered)]
 
+            # If node importance of top K features is unsignificant, discard 
+            # Possible as we have importance informative measure, unlike others.
+            if explainer_name == 'GraphSVX':
+                explainable_part = true_confs[c] - \
+                                explainer.base_values[c]
+                num_noise_feat = [idx for idx in num_noise_feat if np.abs(coefs[idx]) > 0.05*np.abs(explainable_part)]
+            
             # Count number of noisy that appear in explanations
+            num_noise_feat = len(num_noise_feat)
             pred_class_num_noise_feats.append(num_noise_feat)
 
             # Return number of noisy features considered in this test sample
@@ -416,12 +425,13 @@ def filter_useless_features(args_dataset,
 
         print(pred_class_num_noise_feats)
 
-        perc = 100 * sum(total_num_noise_feat_considered) / sum(F)
-        print(
-            'Proportion of considered noisy features among features: {:.2f}%'.format(perc))
-
-        perc = 100 * sum(pred_class_num_noise_feats) / sum(K)
-        print('Proportion of explanations showing noisy features: {:.2f}%'.format(perc))
+        if sum(F) != 0:
+            perc = 100 * sum(total_num_noise_feat_considered) / sum(F)
+            print(
+                'Proportion of considered noisy features among features: {:.2f}%'.format(perc))
+        if sum(K) != 0:
+            perc = 100 * sum(pred_class_num_noise_feats) / sum(K)
+            print('Proportion of explanations showing noisy features: {:.2f}%'.format(perc))
 
         if sum(total_num_noise_feat_considered) != 0:
             perc = 100 * sum(pred_class_num_noise_feats) / (sum(total_num_noise_feat_considered))
@@ -484,6 +494,7 @@ def noise_feats_for_random(data, model, K, args_num_noise_feat, node_indices):
         pred_class_num_noise_feats.append(num_noise_feat)
 
     return pred_class_num_noise_feats
+
 
 ###############################################################################
 # Noisy noise eval on real world datasets
@@ -564,6 +575,9 @@ def filter_useless_nodes(args_dataset,
         true_confs, predicted_classes = log_logits.exp()[node_indices].max(dim=1)
     del log_logits
 
+    if args_regu == 1:
+        args_regu = 0
+
     # Study attention weights of noisy nodes in GAT model - compare attention with explanations
     if str(type(model)) == "<class 'src.models.GAT'>":
         study_attention_weights(data, model, args_test_samples)
@@ -631,20 +645,19 @@ def filter_useless_nodes(args_dataset,
                 K.append(int(args_K * len(explainer.neighbours)))
 
             # Store indexes of K most important features, for each class
-            nei_indices = np.abs(coefs).argsort()[-K[j]:].tolist()
+            nei_indices = coefs.argsort()[-K[j]:].tolist()
 
             # Number of noisy features that appear in explanations - use index to spot them
-            num_noise_nei = sum(
-                idx > (explainer.neighbours.shape[0] - num_noisy_nodes) for idx in nei_indices)
+            noise_nei = [idx for idx in nei_indices if idx > (explainer.neighbours.shape[0] - num_noisy_nodes)]
 
             # If node importance of top K neighbours is unsignificant, discard 
             # Possible as we have importance informative measure, unlike others.
             if explainer_name == 'GraphSVX':
                 explainable_part = true_confs[c] - \
                                 explainer.base_values[c]
-                num_noise_nei = len([imp for imp in sorted(
-                    nei_indices)[-num_noise_nei:] if np.abs(coefs[imp]) > 0.05*explainable_part])
-
+                noise_nei = [idx for idx in noise_nei if np.abs(coefs[idx]) > 0.05*np.abs(explainable_part)]
+            
+            num_noise_nei = len(noise_nei)
             pred_class_num_noise_neis.append(num_noise_nei)
 
             # Return number of noisy nodes adjacent to node of interest

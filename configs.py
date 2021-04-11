@@ -88,7 +88,8 @@ def arg_parse():
     parser.add_argument("--multiclass", type=bool,
                         help='False if we consider explanations for the predicted class only')
     parser.add_argument("--regu", type=float,
-                        help='None if we do not apply regularisation, 1 if only feat')
+                        help='None if we do not apply regularisation, \
+                        1 if we focus only on features in explanations, 0 for nodes')
     parser.add_argument("--info", type=bool,
                         help='True if want to print info')
     parser.add_argument("--fullempty", type=str,
@@ -101,19 +102,19 @@ def arg_parse():
     # args_coal: 'NewSmarterSeparate', 'SmarterSeparate', 'Smarter', 'Smart', 'Random', 'All'
     # args_g: WLS, 'WLR_sklearn', 'WLR_Lasso'
 
-    parser.set_defaults(dataset='syn1',
-                        model='GCN',
+    parser.set_defaults(dataset='Cora',
+                        model='GAT',
                         indexes=[500, 600],
-                        num_samples=400,
+                        num_samples=200,
                         fullempty=None,
-                        S=1,
-                        hops=3,
+                        S=4,
+                        hops=2,
                         hv='compute_pred',
-                        feat='Expectation',
-                        coal='SmarterSeparate',
+                        feat='Null',
+                        coal='NewSmarterSeparate',
                         g='WLR_sklearn',
                         multiclass=False,
-                        regu=None,
+                        regu=0,
                         info=True,
                         seed=10,
                         gpu=False,

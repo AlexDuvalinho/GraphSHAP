@@ -129,14 +129,20 @@ class GraphSVX():
             # --- Feature selection ---
             if args_hv == 'compute_pred_subgraph':
                 feat_idx, discarded_feat_idx = self.feature_selection_subgraph(node_index, args_feat)
-                # Also solve incompatibility
-                if args_hv == 'SmarterSeparate':
+                # Also solve incompatibility due to overlap feat/node importance
+                if args_hv == 'SmarterSeparate' or args_hv == 'NewSmarterSeparate':
                     print('Incompatibility: user Smarter sampling instead')
                     args_hv = 'Smarter' 
             else: 
                 feat_idx, discarded_feat_idx = self.feature_selection(node_index, args_feat)
 
-            # Total number of features + neighbours considered for node v
+            # M: total number of features + neighbours considered for node v
+            if regu==1 or D==0: 
+                D=0
+                print('Explainations only consider node features')
+            if regu==0 or self.F==0:
+                self.F=0
+                print('Explainations only consider graph structure')
             self.M = self.F+D
 
             # Def range of endcases considered
@@ -391,9 +397,10 @@ class GraphSVX():
                 if self.F==0 or D==0:
                     num = int(num_samples * self.F/self.M)
                 elif regu != None:
-                    num = int( num_samples * ( self.F/self.M + ((regu - 0.5)/0.5)  * (self.F/self.M) ) )    
+                    num = int(num_samples * regu)
+                    #num = int( num_samples * ( self.F/self.M + ((regu - 0.5)/0.5)  * (self.F/self.M) ) )    
                 else: 
-                    num = int(0.25* num_samples/2 + 0.75 * num_samples * self.F/self.M)
+                    num = int(0.5* num_samples/2 + 0.5 * num_samples * self.F/self.M)
                 # Features only
                 z_bis = eval('self.' + args_coal)(num, args_K, 1)  
                 z_bis = z_bis[torch.randperm(z_bis.size()[0])]
@@ -595,7 +602,7 @@ class GraphSVX():
         # Favour neighbour
         else:
             # Define empty and full coalitions
-            M = len(self.neighbours)
+            M = self.M - self.F
             # self.F = 0
             z_ = torch.ones(num_samples, M)
             z_[1::2] = torch.zeros(num_samples//2, M)
@@ -2272,6 +2279,7 @@ class GNNExplainer():
                 np.random.choice(range(1000)), self.data.x, self.data.edge_index)
 
         # Transfer edge importance to node importance
+        # Node importance = average of incident edges importance
         dico = {}
         for idx in torch.nonzero(self.edge_mask):
             node = self.data.edge_index[0, idx].item()
@@ -2288,8 +2296,9 @@ class GNNExplainer():
                 self.neighbours.shape[0], self.data.num_classes)
             # for key, val in dico.items():
             for i, val in enumerate(dico.values()):
-                #self.coefs[key,:] = sum(val)
-                self.coefs[i, :] = sum(val)
+                # self.coefs[i, :] = sum(val)
+                self.coefs[i, :] = max(val)
+                
 
             # Eliminate node_index from neighbourhood
             self.neighbours = self.neighbours[self.neighbours != node_index]
@@ -2308,9 +2317,10 @@ class GNNExplainer():
                 self.coefs[i] = sum(val)
 
             # Eliminate node_index from neighbourhood
+            j = (self.neighbours == node_index).nonzero().item()
+            self.coefs = torch.cat([self.coefs[:j], self.coefs[j+1:]])
             self.neighbours = self.neighbours[self.neighbours != node_index]
-            self.coefs = self.coefs[1:]
-
+            
             if info == True:
                 self.vizu(self.edge_mask, node_index, self.coefs[0], hops)
             del explainer
