@@ -400,7 +400,7 @@ def filter_useless_features(args_dataset,
             feat_indices = coefs.argsort()[-K[j]:].tolist()
 
             # Number of noisy features that appear in explanations - use index to spot them
-            num_noise_feat = [idx for idx in feat_indices if idx > (explainer.neighbours.shape[0] - num_noise_feat_considered)]
+            num_noise_feat = [idx for idx in feat_indices if idx > (explainer.F - num_noise_feat_considered)]
 
             # If node importance of top K features is unsignificant, discard 
             # Possible as we have importance informative measure, unlike others.

@@ -950,7 +950,7 @@ class GraphSVX():
             # Usual case - exclude features for the whole subgraph
             else:
                 for val in ex_feat:
-                    X[self.neighbours, val] = av_feat_values[val].repeat(D)
+                    X[self.neighbours, val] = av_feat_values[val].repeat(len(self.neighbours))
 
             # Apply model on (X,A) as input.
             if self.gpu:
@@ -2123,10 +2123,10 @@ class SHAP():
 
         # Determine z => features whose importance is investigated
         # Decrease number of samples because nodes are not considered
-        num_samples = num_samples//2
+        num_samples = num_samples//3
 
         # Consider all features (+ use expectation like below)
-        feat_idx = torch.unsqueeze(torch.arange(self.data.num_nodes), 1)
+        # feat_idx = torch.unsqueeze(torch.arange(self.F), 1)
 
         # Sample z - binary vector of dimension (num_samples, M)
         z_ = torch.empty(num_samples, self.M).random_(2)
@@ -2139,7 +2139,7 @@ class SHAP():
         # Create dataset (z, f(z')), stored as (z_, fz)
         # Retrive z' from z and x_v, then compute f(z')
         fz = self.compute_pred(node_index, num_samples,
-                               self.F, z_, feat_idx, multiclass, true_pred)
+                            z_, multiclass, true_pred)
 
         # OLS estimator for weighted linear regression
         phi, base_value = self.OLS(z_, weights, fz)  # dim (M*num_classes)
@@ -2166,7 +2166,7 @@ class SHAP():
                     (self.M-1)/(scipy.special.binom(self.M, a)*a*(self.M-a)))
         return torch.tensor(shap_kernel)
 
-    def compute_pred(self, node_index, num_samples, F, z_, feat_idx, multiclass, true_pred):
+    def compute_pred(self, node_index, num_samples, z_, multiclass, true_pred):
         """
         Variables are exactly as defined in explainer function, where compute_pred is used
         This function aims to construct z' (from z and x_v) and then to compute f(z'), 
@@ -2179,7 +2179,7 @@ class SHAP():
         # This implies retrieving z from z' - wrt sampled neighbours and node features
         # We start this process here by storing new node features for v and neigbours to
         # isolate
-        X_v = torch.zeros([num_samples, self.data.num_features])
+        X_v = torch.zeros([num_samples, self.F])
 
         # Init label f(z') for graphshap dataset - consider all classes
         if multiclass:
@@ -2192,9 +2192,9 @@ class SHAP():
 
             # Define new node features dataset (we only modify x_v for now)
             # Features where z_j == 1 are kept, others are set to 0
-            for j in range(F):
+            for j in range(self.F):
                 if z_[i, j].item() == 1:
-                    X_v[i, feat_idx[j].item()] = 1
+                    X_v[i, j] = 1
 
             # Change feature vector for node of interest
             X = deepcopy(self.data.x)
