@@ -353,10 +353,9 @@ def filter_useless_features(args_dataset,
                 
                 # Adaptable K
                 if explainer.F > 100:
-                    #K.append(10)
-                     K.append(int(args_K * 100))
+                    K.append(int(args_K * 100))
                 else:
-                    K.append(int(explainer.F * args_K))
+                    K.append( max(1, int(explainer.F * args_K)) )
 
                 # Num_features_considered
                 if args_feat == 'Null':
@@ -642,7 +641,7 @@ def filter_useless_nodes(args_dataset,
             if len(explainer.neighbours) > 100:
                 K.append(int(args_K * 100))
             else:
-                K.append(int(args_K * len(explainer.neighbours)))
+                K.append( max(1, int(args_K * len(explainer.neighbours))) )
 
             # Store indexes of K most important features, for each class
             nei_indices = coefs.argsort()[-K[j]:].tolist()
