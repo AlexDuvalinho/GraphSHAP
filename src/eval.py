@@ -89,7 +89,8 @@ def eval_syn(data, model, args):
 
         # Retrieve top k elements indices form graphsvx_node_explanations
         l = list(graphsvx.neighbours).index(ground_truth[0])
-        print('Importance:', np.sum(graphsvx_explanations[l:l+5]))
+        if args.info: 
+            print('Importance:', np.sum(graphsvx_explanations[l:l+5]))
         #print('Importance:', np.sum(
         #    graphsvx_explanations[l:l+4]) / (np.sum(graphsvx_explanations)-0.01652819)) # base value
 
