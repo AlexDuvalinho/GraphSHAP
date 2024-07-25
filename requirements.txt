@@ -1,4 +1,4 @@
-torch==1.6.0
+torch==2.2.0
 torch-geometric==1.6.1
 torchvision==0.7.0
 torch-sparse
@@ -8,7 +8,7 @@ tensorboardX
 seaborn==0.10.1
 
 # torch-geometric==1.6.1
-# torch==1.6.0+cu101
+# torch==2.2.0+cu101
 # torchvision==0.7.0+cu101
 # torch-sparse==latest+cu101
 # torch-cluster==latest+cu101
